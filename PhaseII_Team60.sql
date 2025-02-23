@@ -42,8 +42,8 @@ airlineID, revenue
 */
 create table Airline
 (
-    revenue   int UNSIGNED NOT NULL,
     airlineID varchar(32) NOT NULL, -- Assumed max length of airline ID is 32 characters
+    revenue   int UNSIGNED NOT NULL,
     PRIMARY KEY (airlineID)
 );
 
@@ -177,8 +177,7 @@ create table Airplane
     progress        int UNSIGNED NOT NULL,
     airplane_status ENUM ('on_ground', 'in_flight') NOT NULL,
     next_time       time    NOT NULL,
-    check (tail_num REGEXP '^[n]{1}[0-9]{3}[a-z]{2}$'
-) ,
+    check (tail_num REGEXP '^[n]{1}[0-9]{3}[a-z]{2}$'),
     FOREIGN KEY (airlineID) REFERENCES Airline (airlineID) ON UPDATE CASCADE ON DELETE RESTRICT,
     FOREIGN KEY (locID) REFERENCES Location (locID) ON UPDATE CASCADE ON DELETE SET NULL,
     FOREIGN KEY (flightID) REFERENCES Flight (flightID) ON UPDATE CASCADE ON DELETE SET NULL,
@@ -191,8 +190,8 @@ Airbus
 */
 create table Airbus
 (
-    neo bool NOT NULL,
     FOREIGN KEY (tail_num, airlineID) REFERENCES Airplane (tail_num, airlineID) ON UPDATE CASCADE ON DELETE CASCADE,
+    neo bool NOT NULL,
     PRIMARY KEY (tail_num, airlineID)
 );
 
@@ -203,8 +202,7 @@ Boeing
 create table Boeing
 (
     model int UNSIGNED NOT NULL,
-    check (model % 10 = 7 and model between 700 and 799
-) ,
+    check (model % 10 = 7 and model between 700 and 799),
     maintained bool NOT NULL,
     FOREIGN KEY (tail_num, airlineID) REFERENCES Airplane (tail_num, airlineID)  ON UPDATE CASCADE ON DELETE CASCADE,
     PRIMARY KEY (tail_num, airlineID)
@@ -218,8 +216,7 @@ create table Flight
 (
     flightID char(5) NOT NULL,
     cost     int UNSIGNED NOT NULL,
-    CHECK (flightID = taxID REGEXP '^[a-z]{2}_[0-9]{2}$'
-) ,
+    CHECK (flightID = taxID REGEXP '^[a-z]{2}_[0-9]{2}$'),
     FOREIGN KEY (routeID) REFERENCES Route (routeID) ON UPDATE CASCADE ON DELETE RESTRICT,
     PRIMARY KEY (flightID)
 );
@@ -230,8 +227,11 @@ legID [FK8], routeID [FK9], sequence
 */
 create table RouteLegContains
 (
-    sequence int UNSIGNED NOT NULL,
-    FOREIGN KEY (routeID) REFERENCES Route (routeID) ON UPDATE CASCADE ON DELETE CASCADE,
     FOREIGN KEY (legID) REFERENCES Leg (legID) ON UPDATE CASCADE ON DELETE RESTRICT,
+    FOREIGN KEY (routeID) REFERENCES Route (routeID) ON UPDATE CASCADE ON DELETE CASCADE,
+    sequence int UNSIGNED NOT NULL,
     PRIMARY KEY (legID, routeID)
 );
+
+--- Insert Statements
+
