@@ -37,9 +37,22 @@ that contains
 all of the data, and supports as many of the constraints as reasonably possible. */
 
 /*
+Location
+locID
+*/
+DROP TABLE IF EXISTS Location;
+create table Location
+(
+    locID varchar(64) NOT NULL,
+    check (locID like 'plane_%' or locID like 'port_%'),
+    PRIMARY KEY (locID)
+);
+
+/*
 Airline
 airlineID, revenue
 */
+DROP TABLE IF EXISTS Airline;
 create table Airline
 (
     airlineID varchar(32) NOT NULL, -- Assumed max length of airline ID is 32 characters
@@ -52,6 +65,7 @@ Airport
 airportID, name, city, state, country, locID [FK7]
 FK7: locID → Location(locID)
 */
+DROP TABLE IF EXISTS Airport;
 create table Airport
 (
     airportID    char(3)     NOT NULL,
@@ -59,6 +73,7 @@ create table Airport
     city         varchar(64) NOT NULL,
     state        varchar(64) NOT NULL,
     country      char(3)     NOT NULL,
+    locID        varchar(64),
     PRIMARY KEY (airportID),
     FOREIGN KEY (locID) REFERENCES Location (locID) ON UPDATE CASCADE ON DELETE SET NULL
 );
@@ -67,10 +82,13 @@ create table Airport
 Leg
 legID, distance, arrivalAirportID [FK11], departureAirportID [FK12]
 */
+DROP TABLE IF EXISTS Leg;
 create table Leg
 (
-    legID    varchar(8) NOT NULL,
-    distance int UNSIGNED NOT NULL,
+    legID              varchar(8) NOT NULL,
+    distance           int UNSIGNED NOT NULL,
+    arrivalAirportID   char(3)    NOT NULL,
+    departureAirportID char(3)    NOT NULL,
     FOREIGN KEY (arrivalAirportID) REFERENCES Airport (airportID) ON UPDATE CASCADE ON DELETE CASCADE,
     FOREIGN KEY (departureAirportID) REFERENCES Airport (airportID) ON UPDATE CASCADE ON DELETE CASCADE,
     PRIMARY KEY (legID),
@@ -81,6 +99,7 @@ create table Leg
 Route
 routeID
 */
+DROP TABLE IF EXISTS Route;
 create table Route
 (
     routeID varchar(64) NOT NULL,
@@ -88,14 +107,31 @@ create table Route
 );
 
 /*
+Contains
+legID [FK8], routeID [FK9], sequence
+*/
+DROP TABLE IF EXISTS RouteLegContains;
+create table RouteLegContains
+(
+    legID    varchar(8)  NOT NULL,
+    routeID  varchar(64) NOT NULL,
+    FOREIGN KEY (legID) REFERENCES Leg (legID) ON UPDATE CASCADE ON DELETE RESTRICT,
+    FOREIGN KEY (routeID) REFERENCES Route (routeID) ON UPDATE CASCADE ON DELETE CASCADE,
+    sequence int UNSIGNED NOT NULL,
+    PRIMARY KEY (legID, routeID)
+);
+
+/*
 Person
 personID, first, last, locID [FK13]
 */
+DROP TABLE IF EXISTS Person;
 create table Person
 (
     personID   varchar(8)  NOT NULL,
     first_name varchar(32) NOT NULL,
     last_name  varchar(32) NOT NULL,
+    locID      varchar(64) NOT NULL,
     FOREIGN KEY (locID) REFERENCES Location (locID) ON UPDATE CASCADE ON DELETE CASCADE,
     PRIMARY KEY (personID),
     check (personID like 'p%'),
@@ -104,15 +140,34 @@ create table Person
     );
 
 /*
+Flight
+flightID, cost, routeID [FK10]
+*/
+DROP TABLE IF EXISTS Flight;
+create table Flight
+(
+    flightID char(5) NOT NULL,
+    cost     int UNSIGNED NOT NULL,
+    CHECK (flightID REGEXP '^[a-z]{2}_[0-9]{2}$'
+) ,
+    routeID varchar(64) NOT NULL,
+    FOREIGN KEY (routeID) REFERENCES Route (routeID) ON UPDATE CASCADE ON DELETE RESTRICT,
+    PRIMARY KEY (flightID)
+);
+
+/*
 Pilot
 personID [FK17], taxID, flightID [FK14], experience
 */
+DROP TABLE IF EXISTS Pilot;
 create table Pilot
 (
     taxID      char(11),
     experience int UNSIGNED,
     check (taxID IS NULL OR taxID REGEXP '^[0-9]{3}-[0-9]{2}-[0-9]{4}$'
 ) ,
+    personID   varchar(8)  NOT NULL,
+    flightID char(5),
     FOREIGN KEY (personID) REFERENCES Person (personID) ON UPDATE RESTRICT ON DELETE CASCADE,
     FOREIGN KEY (flightID) REFERENCES Flight (flightID) ON UPDATE CASCADE ON DELETE SET NULL,
 	PRIMARY KEY (personID)
@@ -122,9 +177,11 @@ create table Pilot
 License (multivalued attribute)
 licenseID, personID [FK3]
 */
+DROP TABLE IF EXISTS License;
 create table License
 (
     licenseID varchar(32) NOT NULL,
+    personID  varchar(8)  NOT NULL,
     FOREIGN KEY (personID) REFERENCES Person (personID) ON UPDATE RESTRICT ON DELETE CASCADE,
     PRIMARY KEY (licenseID, personID)
 );
@@ -133,10 +190,12 @@ create table License
 Passenger
 personID [FK16], funds, miles
 */
+DROP TABLE IF EXISTS Passenger;
 create table Passenger
 (
-    funds int UNSIGNED NOT NULL,
-    miles int UNSIGNED NOT NULL,
+    funds    int UNSIGNED NOT NULL,
+    miles    int UNSIGNED NOT NULL,
+    personID varchar(8) NOT NULL,
     FOREIGN KEY (personID) REFERENCES Person (personID) ON UPDATE RESTRICT ON DELETE CASCADE,
     PRIMARY KEY (personID)
 );
@@ -145,39 +204,34 @@ create table Passenger
 Vacation (Multivalued attribute)
 destination, personID [FK2], sequence
 */
+DROP TABLE IF EXISTS Vacation;
 create table Vacation
 (
-    destination char(3) NOT NULL,
+    destination char(3)    NOT NULL,
     sequence    int UNSIGNED,
+    personID    varchar(8) NOT NULL,
     FOREIGN KEY (personID) REFERENCES Person (personID) ON UPDATE RESTRICT ON DELETE CASCADE,
     PRIMARY KEY (destination, personID)
-);
-
-/*
-Location
-locID
-*/
-create table Location
-(
-    locID varchar(64) NOT NULL,
-    check (locID like 'plane_%' or locID like 'port_%'),
-    PRIMARY KEY (locID)
 );
 
 /*
 Airplane
 tail_num, airlineID [FK1], seat_cap, speed, locID [FK6], flightID [FK15], progress, status, next_time
 */
+DROP TABLE IF EXISTS Airplane;
 create table Airplane
 (
     tail_num        char(6) NOT NULL,
     seat_cap        int UNSIGNED NOT NULL,
     speed           int UNSIGNED NOT NULL,
-    progress        int UNSIGNED NOT NULL,
+    progress        int UNSIGNED,
     airplane_status ENUM ('on_ground', 'in_flight') DEFAULT 'on_ground' NOT NULL,
-    next_time       time    NOT NULL,
+    next_time       time,
     check (tail_num REGEXP '^[n]{1}[0-9]{3}[a-z]{2}$'
 ) ,
+    airlineID varchar(32) NOT NULL,
+    locID varchar(64),
+    flightID char(5),
     FOREIGN KEY (airlineID) REFERENCES Airline (airlineID) ON UPDATE CASCADE ON DELETE RESTRICT,
     FOREIGN KEY (locID) REFERENCES Location (locID) ON UPDATE CASCADE ON DELETE SET NULL,
     FOREIGN KEY (flightID) REFERENCES Flight (flightID) ON UPDATE CASCADE ON DELETE SET NULL,
@@ -188,10 +242,13 @@ create table Airplane
 Airbus
 (tail_num, airlineID) [FK4], neo
 */
+DROP TABLE IF EXISTS Airbus;
 create table Airbus
 (
+    tail_num  char(6)     NOT NULL,
+    airlineID varchar(32) NOT NULL,
     FOREIGN KEY (tail_num, airlineID) REFERENCES Airplane (tail_num, airlineID) ON UPDATE CASCADE ON DELETE CASCADE,
-    neo bool NOT NULL,
+    neo       bool        NOT NULL,
     PRIMARY KEY (tail_num, airlineID)
 );
 
@@ -199,43 +256,55 @@ create table Airbus
 Boeing
 (tail_num, airlineID) [FK5], model, maintained
 */
+DROP TABLE IF EXISTS Boeing;
 create table Boeing
 (
     model int UNSIGNED NOT NULL,
     check (model % 10 = 7 and model between 700 and 799
 ) ,
     maintained bool NOT NULL,
+    tail_num        char(6) NOT NULL,
+    airlineID varchar(32) NOT NULL,
     FOREIGN KEY (tail_num, airlineID) REFERENCES Airplane (tail_num, airlineID)  ON UPDATE CASCADE ON DELETE CASCADE,
     PRIMARY KEY (tail_num, airlineID)
 );
 
-/*
-Flight
-flightID, cost, routeID [FK10]
-*/
-create table Flight
-(
-    flightID char(5) NOT NULL,
-    cost     int UNSIGNED NOT NULL,
-    CHECK (flightID REGEXP '^[a-z]{2}_[0-9]{2}$'
-) ,
-    FOREIGN KEY (routeID) REFERENCES Route (routeID) ON UPDATE CASCADE ON DELETE RESTRICT,
-    PRIMARY KEY (flightID)
-);
-
-/*
-Contains
-legID [FK8], routeID [FK9], sequence
-*/
-create table RouteLegContains
-(
-    FOREIGN KEY (legID) REFERENCES Leg (legID) ON UPDATE CASCADE ON DELETE RESTRICT,
-    FOREIGN KEY (routeID) REFERENCES Route (routeID) ON UPDATE CASCADE ON DELETE CASCADE,
-    sequence int UNSIGNED NOT NULL,
-    PRIMARY KEY (legID, routeID)
-);
-
 -- Insert Statements
+INSERT into Location (locID)
+values ('port_1'),
+       ('port_2'),
+       ('port_3'),
+       ('port_10'),
+       ('port_17'),
+       ('plane_1'),
+       ('plane_5'),
+       ('plane_8'),
+       ('plane_13'),
+       ('plane_20'),
+       ('port_12'),
+       ('port_14'),
+       ('port_15'),
+       ('port_20'),
+       ('port_4'),
+       ('port_16'),
+       ('port_11'),
+       ('port_23'),
+       ('port_7'),
+       ('port_6'),
+       ('port_13'),
+       ('port_21'),
+       ('port_18'),
+       ('port_22'),
+       ('plane_6'),
+       ('plane_18'),
+       ('plane_7'),
+       ('plane_2'),
+       ('plane_3'),
+       ('plane_4'),
+       ('port_24'),
+       ('plane_10'),
+       ('port_25');
+
 INSERT into Airline (airlineID, revenue)
 values ('Delta', 53000),
        ('United', 48000),
@@ -257,14 +326,14 @@ values ('ATL', 'Atlanta Hartsfield_Jackson International', 'Atlanta', 'Georgia',
         'port_3'),
        ('LHR', 'London Heathrow', 'London', 'England', 'GBR', 'port_4'),
        ('IST', 'Istanbul International', 'Arnavutkoy', 'Istanbul ', 'TUR',
-        'NULL'),
+        NULL),
        ('DFW', 'Dallas_Fort Worth International', 'Dallas', 'Texas', 'USA',
         'port_6'),
        ('CAN', 'Guangzhou International', 'Guangzhou', 'Guangdong', 'CHN',
         'port_7'),
-       ('DEN', 'Denver International', 'Denver', 'Colorado', 'USA', 'NULL'),
+       ('DEN', 'Denver International', 'Denver', 'Colorado', 'USA', NULL),
        ('LAX', 'Los Angeles International', 'Los Angeles', 'California', 'USA',
-        'NULL'),
+        NULL),
        ('ORD', 'O_Hare International', 'Chicago', 'Illinois', 'USA', 'port_10'),
        ('AMS', 'Amsterdam Schipol International', 'Amsterdam', 'Haarlemmermeer',
         'NLD', 'port_11'),
@@ -280,7 +349,7 @@ values ('ATL', 'Atlanta Hartsfield_Jackson International', 'Atlanta', 'Georgia',
        ('LGW', 'London Gatwick', 'London', 'England', 'GBR', 'port_17'),
        ('MUC', 'Munich International', 'Munich', 'Bavaria', 'DEU', 'port_18'),
        ('MDW', 'Chicago Midway International', 'Chicago', 'Illinois', 'USA',
-        'NULL'),
+        NULL),
        ('IAH', 'George Bush Intercontinental', 'Houston', 'Texas', 'USA',
         'port_20'),
        ('HOU', 'William P_Hobby International', 'Houston', 'Texas', 'USA',
@@ -312,10 +381,7 @@ values ('leg_33', 4400, 'ICN', 'LHR'),
        ('leg_16', 800, 'FCO', 'MAD'),
        ('leg_25', 600, 'MAD', 'CDG'),
        ('leg_13', 200, 'CDG', 'LHR'),
-       ('leg_16', 800, 'FCO', 'MAD'),
-       ('leg_24', 300, 'MAD', 'BCN'),
        ('leg_5', 500, 'BCN', 'CDG'),
-       ('leg_14', 400, 'CDG', 'MUC'),
        ('leg_27', 300, 'MUC', 'BER'),
        ('leg_8', 600, 'BER', 'LGW'),
        ('leg_21', 600, 'LGW', 'BER'),
@@ -324,15 +390,12 @@ values ('leg_33', 4400, 'ICN', 'LHR'),
        ('leg_11', 500, 'CDG', 'BCN'),
        ('leg_6', 300, 'BCN', 'MAD'),
        ('leg_26', 800, 'MAD', 'FCO'),
-       ('leg_9', 300, 'BER', 'MUC'),
        ('leg_30', 200, 'MUC', 'FRA'),
        ('leg_17', 300, 'FRA', 'BER'),
        ('leg_7', 4700, 'BER', 'CAN'),
        ('leg_10', 1600, 'CAN', 'HND'),
        ('leg_18', 100, 'HND', 'NRT'),
-       ('leg_16', 800, 'FCO', 'MAD'),
        ('leg_24', 300, 'MAD', 'BCN'),
-       ('leg_5', 500, 'BCN', 'CDG'),
        ('leg_12', 600, 'CDG', 'FCO'),
        ('leg_15', 200, 'DFW', 'IAH'),
        ('leg_20', 100, 'IAH', 'HOU'),
@@ -352,6 +415,46 @@ values ('americas_hub_exchange'),
        ('south_euro_loop'),
        ('texas_local'),
        ('korea_direct');
+
+INSERT into RouteLegContains (legID, routeID, sequence)
+values ('leg_4', 'americas_hub_exchange', 1),
+       ('leg_2', 'americas_one', 1),
+       ('leg_1', 'americas_one', 2),
+       ('leg_31', 'americas_three', 1),
+       ('leg_14', 'americas_three', 2),
+       ('leg_3', 'americas_two', 1),
+       ('leg_22', 'americas_two', 2),
+       ('leg_23', 'big_europe_loop', 1),
+       ('leg_29', 'big_europe_loop', 2),
+       ('leg_16', 'big_europe_loop', 3),
+       ('leg_25', 'big_europe_loop', 4),
+       ('leg_13', 'big_europe_loop', 5),
+       ('leg_16', 'euro_north', 1),
+       ('leg_24', 'euro_north', 2),
+       ('leg_5', 'euro_north', 3),
+       ('leg_14', 'euro_north', 4),
+       ('leg_27', 'euro_north', 5),
+       ('leg_8', 'euro_north', 6),
+       ('leg_21', 'euro_south', 1),
+       ('leg_9', 'euro_south', 2),
+       ('leg_28', 'euro_south', 3),
+       ('leg_11', 'euro_south', 4),
+       ('leg_6', 'euro_south', 5),
+       ('leg_26', 'euro_south', 6),
+       ('leg_9', 'germany_local', 1),
+       ('leg_30', 'germany_local', 2),
+       ('leg_17', 'germany_local', 3),
+       ('leg_7', 'pacific_rim_tour', 1),
+       ('leg_10', 'pacific_rim_tour', 2),
+       ('leg_18', 'pacific_rim_tour', 3),
+       ('leg_16', 'south_euro_loop', 1),
+       ('leg_24', 'south_euro_loop', 2),
+       ('leg_5', 'south_euro_loop', 3),
+       ('leg_12', 'south_euro_loop', 4),
+       ('leg_15', 'texas_local', 1),
+       ('leg_20', 'texas_local', 2),
+       ('leg_19', 'texas_local', 3),
+       ('leg_32', 'korea_direct', 1);
 
 INSERT into Person (personID, first_name, last_name, locID)
 values ('p1', 'Jeanne', 'Nelson', 'port_1'),
@@ -400,6 +503,20 @@ values ('p1', 'Jeanne', 'Nelson', 'port_1'),
        ('p7', 'Sonya', 'Owens', 'port_2'),
        ('p9', 'Marlene', 'Warner', 'port_3'),
        ('p46', 'Janice', 'White', 'plane_10');
+
+INSERT into Flight (flightID, routeID, cost)
+values ('dl_10', 'americas_one', 200),
+       ('un_38', 'americas_three', 200),
+       ('ba_61', 'americas_two', 200),
+       ('lf_20', 'euro_north', 300),
+       ('km_16', 'euro_south', 400),
+       ('ba_51', 'big_europe_loop', 100),
+       ('ja_35', 'pacific_rim_tour', 300),
+       ('ry_34', 'germany_local', 100),
+       ('aa_12', 'americas_hub_exchange', 150),
+       ('dl_42', 'texas_local', 220),
+       ('ke_64', 'korea_direct', 500),
+       ('lf_67', 'euro_north', 900);
 
 INSERT into Pilot (personID, flightID, taxID, experience)
 values ('p1', 'dl_10', '330-12-6907', '31'),
@@ -510,42 +627,50 @@ values ('AMS', 'p21', 1),
        ('HND', 'p40', 1),
        ('LGW', 'p46', 1);
 
-INSERT into Location (locID)
-values ('port_1'),
-       ('port_2'),
-       ('port_3'),
-       ('port_10'),
-       ('port_17'),
-       ('plane_1'),
-       ('plane_5'),
-       ('plane_8'),
-       ('plane_13'),
-       ('plane_20'),
-       ('port_12'),
-       ('port_14'),
-       ('port_15'),
-       ('port_20'),
-       ('port_4'),
-       ('port_16'),
-       ('port_11'),
-       ('port_23'),
-       ('port_7'),
-       ('port_6'),
-       ('port_13'),
-       ('port_21'),
-       ('port_18'),
-       ('port_22'),
-       ('plane_6'),
-       ('plane_18'),
-       ('plane_7'),
-       ('plane_2'),
-       ('plane_3'),
-       ('plane_4'),
-       ('port_24'),
-       ('plane_10'),
-       ('port_25');
-
-INSERT into Airplane;
+INSERT into Airplane (tail_num, airlineID, seat_cap, speed, progress,
+                      airplane_status, next_time, locID, flightID)
+values ('n106js', 'Delta', 4, 800, 1, 'in_flight', '8:00:00', 'plane_1',
+        'dl_10'),
+       ('n110jn', 'Delta', 5, 800, 0, 'on_ground', '13:45:00', 'plane_3',
+        'dl_42'),
+       ('n127js', 'Delta', 4, 600, NULL, 'on_ground', NULL, NULL, NULL),
+       ('n330ss', 'United', 4, 800, NULL, 'on_ground', NULL, NULL, NULL),
+       ('n380sd', 'United', 5, 400, 2, 'in_flight', '14:30:00', 'plane_5',
+        'un_38'),
+       ('n616lt', 'British Airways', 7, 600, 0, 'on_ground', '9:30:00',
+        'plane_6', 'ba_61'),
+       ('n517ly', 'British Airways', 4, 600, 0, 'on_ground', '11:30:00',
+        'plane_7', 'ba_51'),
+       ('n620la', 'Lufthansa', 4, 800, 3, 'in_flight', '11:00:00', 'plane_8',
+        'lf_20'),
+       ('n401fj', 'Lufthansa', 4, 300, NULL, 'on_ground', NULL, NULL, NULL),
+       ('n653fk', 'Lufthansa', 6, 600, 6, 'on_ground', '21:23:00', 'plane_10',
+        'lf_67'),
+       ('n118fm', 'Air_France', 4, 400, NULL, 'on_ground', NULL, NULL, NULL),
+       ('n815pw', 'Air_France', 3, 400, NULL, 'on_ground', NULL, NULL, NULL),
+       ('n161fk', 'KLM', 4, 600, 6, 'in_flight', '14:00:00', 'plane_13',
+        'km_16'),
+       ('n337as', 'KLM', 5, 400, NULL, 'on_ground', NULL, NULL, NULL),
+       ('n256ap', 'KLM', 4, 300, NULL, 'on_ground', NULL, NULL, NULL),
+       ('n156sq', 'Ryanair', 8, 600, NULL, 'on_ground', NULL, NULL, NULL),
+       ('n451fi', 'Ryanair', 5, 600, NULL, 'on_ground', NULL, NULL, NULL),
+       ('n341eb', 'Ryanair', 4, 400, 0, 'on_ground', '15:00:00', 'plane_18',
+        'ry_34'),
+       ('n353kz', 'Ryanair', 4, 400, NULL, 'on_ground', NULL, NULL, NULL),
+       ('n305fv', 'Japan Airlines', 6, 400, 1, 'in_flight', '9:30:00',
+        'plane_20', 'ja_35'),
+       ('n443wu', 'Japan Airlines', 4, 800, NULL, 'on_ground', NULL, NULL,
+        NULL),
+       ('n454gq', 'China Southern Airlines', 3, 400, NULL, 'on_ground', NULL,
+        NULL, NULL),
+       ('n249yk', 'China Southern Airlines', 4, 400, NULL, 'on_ground', NULL,
+        NULL, NULL),
+       ('n180co', 'Korean Air Lines', 5, 600, 0, 'on_ground', '16:00:00',
+        'plane_4', 'ke_64'),
+       ('n448cs', 'American', 4, 400, NULL, 'on_ground', NULL, NULL, NULL),
+       ('n225sb', 'American', 8, 800, NULL, 'on_ground', NULL, NULL, NULL),
+       ('n553qn', 'American', 5, 800, 1, 'on_ground', '12:15:00', 'plane_2',
+        'aa_12');
 
 INSERT into Airbus (tail_num, airlineID, neo)
 values ('n106js', 'Delta', FALSE),
@@ -576,56 +701,5 @@ values ('n118fm', 'Air_France', 777, FALSE),
        ('n249yk', 'China Southern Airlines', 787, FALSE),
        ('n448cs', 'American', 787, TRUE);
 
-INSERT into Flight (flightID, routeID, cost)
-values ('dl_10', 'americas_one', 200),
-       ('un_38', 'americas_three', 200),
-       ('ba_61', 'americas_two', 200),
-       ('lf_20', 'euro_north', 300),
-       ('km_16', 'euro_south', 400),
-       ('ba_51', 'big_europe_loop', 100),
-       ('ja_35', 'pacific_rim_tour', 300),
-       ('ry_34', 'germany_local', 100),
-       ('aa_12', 'americas_hub_exchange', 150),
-       ('dl_42', 'texas_local', 220),
-       ('ke_64', 'korea_direct', 500),
-       ('lf_67', 'euro_north', 900);
 
-INSERT into RouteLegContains (legID, routeID, sequence)
-values ('leg_4', 'americas_hub_exchange', 1),
-       ('leg_2', 'americas_one', 1),
-       (' leg_1', 'americas_one', 2),
-       ('leg_31', 'americas_three', 1),
-       (' leg_14', 'americas_three', 2),
-       ('leg_3', 'americas_two', 1),
-       (' leg_22', 'americas_two', 2),
-       ('leg_23', 'big_europe_loop', 1),
-       (' leg_29', 'big_europe_loop', 2),
-       (' leg_16', 'big_europe_loop', 3),
-       (' leg_25', 'big_europe_loop', 4),
-       (' leg_13', 'big_europe_loop', 5),
-       ('leg_16', 'euro_north', 1),
-       (' leg_24', 'euro_north', 2),
-       (' leg_5', 'euro_north', 3),
-       (' leg_14', 'euro_north', 4),
-       (' leg_27', 'euro_north', 5),
-       (' leg_8', 'euro_north', 6),
-       ('leg_21', 'euro_south', 1),
-       (' leg_9', 'euro_south', 2),
-       (' leg_28', 'euro_south', 3),
-       (' leg_11', 'euro_south', 4),
-       (' leg_6', 'euro_south', 5),
-       (' leg_26', 'euro_south', 6),
-       ('leg_9', 'germany_local', 1),
-       (' leg_30', 'germany_local', 2),
-       (' leg_17', 'germany_local', 3),
-       ('leg_7', 'pacific_rim_tour', 1),
-       (' leg_10', 'pacific_rim_tour', 2),
-       (' leg_18', 'pacific_rim_tour', 3),
-       ('leg_16', 'south_euro_loop', 1),
-       (' leg_24', 'south_euro_loop', 2),
-       (' leg_5', 'south_euro_loop', 3),
-       (' leg_12', 'south_euro_loop', 4),
-       ('leg_15', 'texas_local', 1),
-       (' leg_20', 'texas_local', 2),
-       (' leg_19', 'texas_local', 3),
-       ('leg_32', 'korea_direct', 1);
+
