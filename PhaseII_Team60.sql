@@ -12,21 +12,15 @@
 -- This file must run without error for credit.
 /* This is a standard preamble for most of our scripts. The intent is to establish
 a consistent environment for the database behavior. */
-set
-global transaction isolation level serializable;
-set
-global SQL_MODE = 'ANSI,TRADITIONAL';
+set global transaction isolation level serializable;
+set global SQL_MODE = 'ANSI,TRADITIONAL';
 set names utf8mb4;
-set
-SQL_SAFE_UPDATES = 0;
-set
-@thisDatabase = 'airline_management';
-drop
-database if exists airline_management;
-create
-database if not exists airline_management;
-use
-airline_management;
+set SQL_SAFE_UPDATES = 0;
+set @thisDatabase = 'airline_management';
+drop database if exists airline_management;
+create database if not exists airline_management;
+use airline_management;
+
 -- Define the database structures
 /* You must enter your tables definitions, along with your primary, unique and
 foreign key
@@ -89,10 +83,10 @@ create table Leg
     distance           int UNSIGNED NOT NULL,
     arrivalAirportID   char(3)    NOT NULL,
     departureAirportID char(3)    NOT NULL,
+	check (legID like 'leg_%' and length(legID) > 4), # Assume all legIDs start with 'leg_'
     FOREIGN KEY (arrivalAirportID) REFERENCES Airport (airportID) ON UPDATE CASCADE ON DELETE CASCADE,
     FOREIGN KEY (departureAirportID) REFERENCES Airport (airportID) ON UPDATE CASCADE ON DELETE CASCADE,
-    PRIMARY KEY (legID),
-    check (legID like 'leg_%' and length(legID) > 4) # Assume all legIDs start with 'leg_'
+    PRIMARY KEY (legID)
 );
 
 /*
@@ -132,12 +126,13 @@ create table Person
     first_name varchar(32) NOT NULL,
     last_name  varchar(32) NOT NULL,
     locID      varchar(64) NOT NULL,
-    FOREIGN KEY (locID) REFERENCES Location (locID) ON UPDATE CASCADE ON DELETE CASCADE,
-    PRIMARY KEY (personID),
     check (personID like 'p%'),
-    check (first_name regexp '^[A-Za-z]+$' and last_name regexp '^[A-Za-z]+$'
-)
-    );
+    check (
+		first_name regexp '^[A-Za-z]+$' and last_name regexp '^[A-Za-z]+$'
+	),
+    FOREIGN KEY (locID) REFERENCES Location (locID) ON UPDATE CASCADE ON DELETE CASCADE,
+    PRIMARY KEY (personID)
+);
 
 /*
 Flight
@@ -148,8 +143,9 @@ create table Flight
 (
     flightID char(5) NOT NULL,
     cost     int UNSIGNED NOT NULL,
-    CHECK (flightID REGEXP '^[a-z]{2}_[0-9]{2}$'
-) ,
+    CHECK (
+		flightID REGEXP '^[a-z]{2}_[0-9]{2}$'
+	),
     routeID varchar(64) NOT NULL,
     FOREIGN KEY (routeID) REFERENCES Route (routeID) ON UPDATE CASCADE ON DELETE RESTRICT,
     PRIMARY KEY (flightID)
@@ -164,8 +160,9 @@ create table Pilot
 (
     taxID      char(11),
     experience int UNSIGNED,
-    check (taxID IS NULL OR taxID REGEXP '^[0-9]{3}-[0-9]{2}-[0-9]{4}$'
-) ,
+    check (
+		taxID IS NULL OR taxID REGEXP '^[0-9]{3}-[0-9]{2}-[0-9]{4}$'
+	) ,
     personID   varchar(8)  NOT NULL,
     flightID char(5),
     FOREIGN KEY (personID) REFERENCES Person (personID) ON UPDATE RESTRICT ON DELETE CASCADE,
@@ -202,16 +199,17 @@ create table Passenger
 
 /*
 Vacation (Multivalued attribute)
-destination, personID [FK2], sequence
+vacationID, destination, sequence, personID [FK2]
 */
 DROP TABLE IF EXISTS Vacation;
 create table Vacation
 (
+    vacationID  int        UNSIGNED NOT NULL AUTO_INCREMENT,
     destination char(3)    NOT NULL,
-    sequence    int UNSIGNED,
+    sequence    int 	   UNSIGNED,
     personID    varchar(8) NOT NULL,
     FOREIGN KEY (personID) REFERENCES Person (personID) ON UPDATE RESTRICT ON DELETE CASCADE,
-    PRIMARY KEY (destination, personID)
+    PRIMARY KEY (vacationID)
 );
 
 /*
@@ -227,8 +225,9 @@ create table Airplane
     progress        int UNSIGNED,
     airplane_status ENUM ('on_ground', 'in_flight') DEFAULT 'on_ground' NOT NULL,
     next_time       time,
-    check (tail_num REGEXP '^[n]{1}[0-9]{3}[a-z]{2}$'
-) ,
+    check (
+		tail_num REGEXP '^[n]{1}[0-9]{3}[a-z]{2}$'
+	) ,
     airlineID varchar(32) NOT NULL,
     locID varchar(64),
     flightID char(5),
@@ -247,8 +246,8 @@ create table Airbus
 (
     tail_num  char(6)     NOT NULL,
     airlineID varchar(32) NOT NULL,
-    FOREIGN KEY (tail_num, airlineID) REFERENCES Airplane (tail_num, airlineID) ON UPDATE CASCADE ON DELETE CASCADE,
     neo       bool        NOT NULL,
+	FOREIGN KEY (tail_num, airlineID) REFERENCES Airplane (tail_num, airlineID) ON UPDATE CASCADE ON DELETE CASCADE,
     PRIMARY KEY (tail_num, airlineID)
 );
 
@@ -260,8 +259,9 @@ DROP TABLE IF EXISTS Boeing;
 create table Boeing
 (
     model int UNSIGNED NOT NULL,
-    check (model % 10 = 7 and model between 700 and 799
-) ,
+    check (
+		model % 10 = 7 and model between 700 and 799
+	),
     maintained bool NOT NULL,
     tail_num        char(6) NOT NULL,
     airlineID varchar(32) NOT NULL,
