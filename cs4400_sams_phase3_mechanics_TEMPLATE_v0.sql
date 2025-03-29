@@ -156,6 +156,28 @@ begin
     -- Ensure that the persion ID is unique
     -- Ensure that the person is a pilot or passenger
     -- Add them to the person table as well as the table of their respective role
+    
+    IF ip_locationID NOT IN (select locationID from location) THEN
+		LEAVE sp_main;
+	END IF;
+    
+    IF ip_personID IN (select personID from person) THEN
+		LEAVE sp_main;
+	END IF;
+    
+    IF ip_taxID IS NOT NULL and ip_experience IS NOT NULL and ip_experience > 0 THEN
+		INSERT INTO person (personID, first_name, last_name, locationID)
+        VALUES (ip_personID, ip_first_name, ip_last_name, ip_locationID);
+        INSERT INTO pilot (personID, taxID, experience, commanding_flight)
+        VALUES (ip_personID, ip_taxID, ip_experience, NULL);
+	END IF;
+    
+    IF ip_miles IS NOT NULL and ip_miles > 0 and ip_funds IS NOT NULL and ip_funds > 0 THEN
+		INSERT INTO person (personID, first_name, last_name, locationID)
+        VALUES (ip_personID, ip_first_name, ip_last_name, ip_locationID);
+        INSERT INTO passenger (personID, miles, funds)
+        VALUES (ip_personID, ip_miles, ip_funds);
+	END IF;
 
 end //
 delimiter ;
@@ -198,6 +220,21 @@ begin
     -- Ensure that the route exists
     -- Ensure that the progress is less than the length of the route
     -- Create the flight with the airplane starting in on the ground
+    
+    IF (ip_support_airline, ip_support_tail) not in (select airlineID, tail_num from airplane) THEN
+		LEAVE sp_main;
+	END IF;
+    
+    IF ip_routeID not in (select routeID from route) THEN
+		LEAVE sp_main;
+	END IF;
+    
+    IF ip_progress >= (select max(sequence) from route_path group by routeID having routeID = ip_routeID) THEN
+    	LEAVE sp_main;
+	END IF;
+    
+    INSERT INTO flight (flightID, routeID, support_airline, support_tail, progress, airplane_status, next_time, cost)
+    VALUES (ip_flightID, ip_routeID, ip_support_airline, ip_support_tail, ip_progress, 'on_ground', ip_next_time, ip_cost);
 
 end //
 delimiter ;
