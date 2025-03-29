@@ -103,7 +103,7 @@ begin
     END IF;
 
     INSERT INTO location (locationID) VALUES (ip_locationID);
-    
+
     INSERT INTO airplane (airlineID, tail_num, seat_capacity, speed, locationID, plane_type, maintenanced, model, neo)
     VALUES (ip_airlineID, ip_tail_num, ip_seat_capacity, ip_speed, ip_locationID, ip_plane_type, ip_maintenanced,
             ip_model, ip_neo);
@@ -128,6 +128,37 @@ begin
 
     -- Ensure that the airport and location values are new and unique
     -- Add airport and location into respective tables
+    DECLARE cnt INT DEFAULT 0;
+
+
+    SELECT COUNT(*)
+    INTO cnt
+    FROM airport
+    WHERE airportID = ip_airportID;
+    IF cnt > 0 THEN
+        LEAVE sp_main;
+    END IF;
+
+    IF ip_locationID IS NOT NULL THEN
+        SELECT COUNT(*)
+        INTO cnt
+        FROM airport
+        WHERE locationID = ip_locationID;
+        IF cnt > 0 THEN
+            LEAVE sp_main;
+        END IF;
+        -- add if the location does not exist in the location table
+        SELECT COUNT(*)
+        INTO cnt
+        FROM location
+        WHERE locationID = ip_locationID;
+        IF cnt = 0 THEN
+            INSERT INTO location(locationID) VALUES (ip_locationID);
+        END IF;
+    END IF;
+
+    INSERT INTO airport (airportID, airport_name, city, state, country, locationID)
+    VALUES (ip_airportID, ip_airport_name, ip_city, ip_state, ip_country, ip_locationID);
 
 end //
 delimiter ;
@@ -195,6 +226,30 @@ begin
 
     -- Ensure that the person is a valid pilot
     -- If license exists, delete it, otherwise add the license
+    DECLARE pilotCount INT DEFAULT 0;
+    DECLARE licenseCount INT DEFAULT 0;
+
+    SELECT COUNT(*) INTO pilotCount FROM pilot WHERE personID = ip_personID;
+    IF pilotCount = 0 THEN
+        LEAVE sp_main;
+    END IF;
+
+
+    SELECT COUNT(*)
+    INTO licenseCount
+    FROM pilot_licenses
+    WHERE personID = ip_personID
+      AND license = ip_license;
+
+    IF licenseCount > 0 THEN
+        DELETE
+        FROM pilot_licenses
+        WHERE personID = ip_personID
+          AND license = ip_license;
+    ELSE
+        INSERT INTO pilot_licenses (personID, license)
+        VALUES (ip_personID, ip_license);
+    END IF;
 
 end //
 delimiter ;
@@ -261,6 +316,52 @@ begin
     -- Update the status of the flight and increment the next time to 1 hour later
     -- Hint: use addtime()
 
+    declare airplane_location VARCHAR(50);
+    declare curr_status VARCHAR(100);
+    declare curr_next_time TIME;
+    declare flight_miles INT;
+
+    select airplane_status, next_time
+    into
+        curr_status, curr_next_time
+    from flight
+    where flightId = ip_flightID;
+
+    if curr_status != 'in_flight' then
+        leave sp_main;
+    end if;
+
+    select a.locationID
+    into airplane_location
+    from flight f
+             join airplane a on f.support_airline = a.airlineID
+        and f.support_tail = a.tail_num
+    where f.flightID = ip_flightID;
+
+    select l.distance
+    into flight_miles
+    from flight f
+             join route_path rp ON f.routeID = rp.routeID
+             join leg l ON rp.legID = l.legID
+    where f.flightID = ip_flightID
+      and rp.sequence = f.progress;
+
+    update pilot
+    set experience = experience + 1
+    where commanding_flight = ip_flightID;
+
+
+    update passenger p
+        join person pe on p.personID = pe.personId
+    set p.miles = p.miles + flight_miles
+    where pe.locationID = airplane_location;
+
+    update flight
+    set airplane_status = 'on_ground',
+        next_time       = ADDTIME(next_time, '01:00:00')
+    where flightID = ip_flightID;
+
+
 end //
 delimiter ;
 
@@ -320,6 +421,80 @@ begin
     -- Check if there enough seats for all the passengers
     -- If not, do not add board any passengers
     -- If there are, board them and deduct their funds
+
+    declare flight_count INT;
+    declare flight_status VARCHAR(100);
+    declare flight_cost INT;
+    declare curr_progress INT;
+    declare total_route_legs INT;
+    declare airplane_loc VARCHAR(50);
+    declare seat_capacity INT;
+    declare next_dest CHAR(3);
+    declare boarding_count INT;
+    declare q_route_id VARCHAR(50);
+
+    select count(*) into flight_count from flight where flightID = ip_flightID;
+    if flight_count != 1 then
+        leave sp_main;
+    end if;
+
+    select airplane_status, cost, progress, routeID
+    into
+        flight_status, flight_cost, curr_progress, q_route_id
+    from flight
+    where flightID = ip_flightID;
+
+    if flight_status != 'on_ground' then
+        leave sp_main;
+    end if;
+
+    select max(sequence)
+    into total_route_legs
+    from route_path
+    where routeID = q_route_id;
+
+    if curr_progress >= total_route_legs then
+        leave sp_main;
+    end if;
+
+    select a.locationID, a.seat_capacity
+    into airplane_loc, seat_capacity
+    from flight f
+             join airplane a on f.support_airline = a.airlineID
+        and f.support_tail = a.tail_num
+    where f.flightID = ip_flightID;
+
+    select l.arrival
+    into next_dest
+    from route_path rp
+             join leg l on rp.legID = l.legID
+    where rp.routeID = q_route_id
+      and rp.sequence = curr_progress + 1;
+
+    select count(*)
+    into boarding_count
+    from person p 
+             join passenger pa on p.personID = pa.personID
+             join (select personID, min(sequence) as next_seq, airportID
+                   from passenger_vacations
+                   group by personID) pv on p.personID = pv.personID
+    where p.locationID = airplane_loc
+      and pv.airportID = next_dest
+      and pa.funds >= flight_cost;
+
+    if boarding_count > seat_capacity then
+        leave sp_main;
+    end if;
+
+    update passenger p
+        join person pe on p.personID = pe.personID
+        join (select personID, min(sequence) as next_seq, airportID
+              from passenger_vacations
+              group by personID) pv on pe.personID = pv.personID
+    set p.funds = p.funds - flight_cost
+    where pe.locationID = airplane_loc
+      and pv.airportID = next_dest
+      and p.funds >= flight_cost;
 
 end //
 delimiter ;
