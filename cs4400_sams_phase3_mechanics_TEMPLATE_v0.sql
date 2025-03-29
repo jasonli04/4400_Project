@@ -102,10 +102,11 @@ begin
         END IF;
     END IF;
 
+    INSERT INTO location (locationID) VALUES (ip_locationID);
+    
     INSERT INTO airplane (airlineID, tail_num, seat_capacity, speed, locationID, plane_type, maintenanced, model, neo)
     VALUES (ip_airlineID, ip_tail_num, ip_seat_capacity, ip_speed, ip_locationID, ip_plane_type, ip_maintenanced,
             ip_model, ip_neo);
-
 
 end //
 delimiter ;
