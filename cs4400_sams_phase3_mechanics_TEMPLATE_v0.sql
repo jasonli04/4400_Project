@@ -128,6 +128,34 @@ begin
 
     -- Ensure that the airport and location values are new and unique
     -- Add airport and location into respective tables
+	DECLARE cnt INT DEFAULT 0;
+    
+    
+    SELECT COUNT(*) INTO cnt
+      FROM airport
+     WHERE airportID = ip_airportID;
+    IF cnt > 0 THEN
+       LEAVE sp_main;
+    END IF;
+
+	IF ip_locationID IS NOT NULL THEN
+       SELECT COUNT(*) INTO cnt
+         FROM airport
+        WHERE locationID = ip_locationID;
+       IF cnt > 0 THEN
+          LEAVE sp_main;
+       END IF;
+       -- add if the location does not exist in the location table
+       SELECT COUNT(*) INTO cnt
+         FROM location
+        WHERE locationID = ip_locationID;
+       IF cnt = 0 THEN
+          INSERT INTO location(locationID) VALUES (ip_locationID);
+       END IF;
+    END IF;
+    
+    INSERT INTO airport (airportID, airport_name, city, state, country, locationID)
+         VALUES (ip_airportID, ip_airport_name, ip_city, ip_state, ip_country, ip_locationID);
 
 end //
 delimiter ;
