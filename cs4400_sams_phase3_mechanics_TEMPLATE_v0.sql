@@ -385,6 +385,80 @@ begin
     -- If not, do not add board any passengers
     -- If there are, board them and deduct their funds
 
+    declare flight_count INT;
+    declare flight_status VARCHAR(100);
+    declare flight_cost INT;
+    declare curr_progress INT;
+    declare total_route_legs INT;
+    declare airplane_loc VARCHAR(50);
+    declare seat_capacity INT;
+    declare next_dest CHAR(3);
+    declare boarding_count INT;
+    declare q_route_id VARCHAR(50);
+
+    select count(*) into flight_count from flight where flightID = ip_flightID;
+    if flight_count != 1 then
+        leave sp_main;
+    end if;
+
+    select airplane_status, cost, progress, routeID
+    into
+        flight_status, flight_cost, curr_progress, q_route_id
+    from flight
+    where flightID = ip_flightID;
+
+    if flight_status != 'on_ground' then
+        leave sp_main;
+    end if;
+
+    select max(sequence)
+    into total_route_legs
+    from route_path
+    where routeID = q_route_id;
+
+    if curr_progress >= total_route_legs then
+        leave sp_main;
+    end if;
+
+    select a.locationID, a.seat_capacity
+    into airplane_loc, seat_capacity
+    from flight f
+             join airplane a on f.support_airline = a.airlineID
+        and f.support_tail = a.tail_num
+    where f.flightID = ip_flightID;
+
+    select l.arrival
+    into next_dest
+    from route_path rp
+             join leg l on rp.legID = l.legID
+    where rp.routeID = q_route_id
+      and rp.sequence = curr_progress + 1;
+
+    select count(*)
+    into boarding_count
+    from person p 
+             join passenger pa on p.personID = pa.personID
+             join (select personID, min(sequence) as next_seq, airportID
+                   from passenger_vacations
+                   group by personID) pv on p.personID = pv.personID
+    where p.locationID = airplane_loc
+      and pv.airportID = next_dest
+      and pa.funds >= flight_cost;
+
+    if boarding_count > seat_capacity then
+        leave sp_main;
+    end if;
+
+    update passenger p
+        join person pe on p.personID = pe.personID
+        join (select personID, min(sequence) as next_seq, airportID
+              from passenger_vacations
+              group by personID) pv on pe.personID = pv.personID
+    set p.funds = p.funds - flight_cost
+    where pe.locationID = airplane_loc
+      and pv.airportID = next_dest
+      and p.funds >= flight_cost;
+
 end //
 delimiter ;
 
