@@ -650,7 +650,6 @@ begin
         where f.flightID = ip_flightID
     )
     where personID = ip_personID;
-
 end //
 delimiter ;
 
@@ -673,6 +672,45 @@ begin
     -- Update assignements of all pilots
     -- Move all pilots to the airport the plane of the flight is located at
 
+    declare flight_status varchar(100);
+    declare curr_progress int;
+    declare total_route_legs int;
+    declare airplane_loc varchar(50);
+    declare routeId varchar(50);
+
+    select airplane_status, progress, routeID
+    into flight_status, curr_progress, routeId
+    from flight
+    where flightID = ip_flightID;
+
+    if flight_status != 'on_ground' then
+        leave sp_main;
+    end if;
+
+    select max(sequence)
+    into total_route_legs
+    from route_path
+    where routeID = routeId;
+
+    if curr_progress < total_route_legs then
+        leave sp_main;
+    end if;
+
+    select a.locationID
+    into airplane_loc
+    from airport a
+             join leg l on a.airportID = l.arrival
+             join route_path rp on l.legID = rp.legID
+    where rp.routeID = routeId
+      and rp.sequence = curr_progress;
+
+    update pilot
+    set commanding_flight = NULL
+    where commanding_flight = ip_flightID;
+
+    update person
+    set locationID = airplane_loc
+    where locationID = ip_flightID;
 end //
 delimiter ;
 
