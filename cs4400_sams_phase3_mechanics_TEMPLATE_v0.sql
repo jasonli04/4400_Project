@@ -103,7 +103,7 @@ begin
     END IF;
 
     INSERT INTO location (locationID) VALUES (ip_locationID);
-    
+
     INSERT INTO airplane (airlineID, tail_num, seat_capacity, speed, locationID, plane_type, maintenanced, model, neo)
     VALUES (ip_airlineID, ip_tail_num, ip_seat_capacity, ip_speed, ip_locationID, ip_plane_type, ip_maintenanced,
             ip_model, ip_neo);
@@ -128,34 +128,37 @@ begin
 
     -- Ensure that the airport and location values are new and unique
     -- Add airport and location into respective tables
-	DECLARE cnt INT DEFAULT 0;
-    
-    
-    SELECT COUNT(*) INTO cnt
-      FROM airport
-     WHERE airportID = ip_airportID;
+    DECLARE cnt INT DEFAULT 0;
+
+
+    SELECT COUNT(*)
+    INTO cnt
+    FROM airport
+    WHERE airportID = ip_airportID;
     IF cnt > 0 THEN
-       LEAVE sp_main;
+        LEAVE sp_main;
     END IF;
 
-	IF ip_locationID IS NOT NULL THEN
-       SELECT COUNT(*) INTO cnt
-         FROM airport
+    IF ip_locationID IS NOT NULL THEN
+        SELECT COUNT(*)
+        INTO cnt
+        FROM airport
         WHERE locationID = ip_locationID;
-       IF cnt > 0 THEN
-          LEAVE sp_main;
-       END IF;
-       -- add if the location does not exist in the location table
-       SELECT COUNT(*) INTO cnt
-         FROM location
+        IF cnt > 0 THEN
+            LEAVE sp_main;
+        END IF;
+        -- add if the location does not exist in the location table
+        SELECT COUNT(*)
+        INTO cnt
+        FROM location
         WHERE locationID = ip_locationID;
-       IF cnt = 0 THEN
-          INSERT INTO location(locationID) VALUES (ip_locationID);
-       END IF;
+        IF cnt = 0 THEN
+            INSERT INTO location(locationID) VALUES (ip_locationID);
+        END IF;
     END IF;
-    
+
     INSERT INTO airport (airportID, airport_name, city, state, country, locationID)
-         VALUES (ip_airportID, ip_airport_name, ip_city, ip_state, ip_country, ip_locationID);
+    VALUES (ip_airportID, ip_airport_name, ip_city, ip_state, ip_country, ip_locationID);
 
 end //
 delimiter ;
@@ -201,6 +204,30 @@ begin
 
     -- Ensure that the person is a valid pilot
     -- If license exists, delete it, otherwise add the license
+    DECLARE pilotCount INT DEFAULT 0;
+    DECLARE licenseCount INT DEFAULT 0;
+
+    SELECT COUNT(*) INTO pilotCount FROM pilot WHERE personID = ip_personID;
+    IF pilotCount = 0 THEN
+        LEAVE sp_main;
+    END IF;
+
+
+    SELECT COUNT(*)
+    INTO licenseCount
+    FROM pilot_licenses
+    WHERE personID = ip_personID
+      AND license = ip_license;
+
+    IF licenseCount > 0 THEN
+        DELETE
+        FROM pilot_licenses
+        WHERE personID = ip_personID
+          AND license = ip_license;
+    ELSE
+        INSERT INTO pilot_licenses (personID, license)
+        VALUES (ip_personID, ip_license);
+    END IF;
 
 end //
 delimiter ;
