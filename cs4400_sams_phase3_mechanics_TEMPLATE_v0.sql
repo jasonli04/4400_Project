@@ -25,10 +25,11 @@ views and procedures. */
 -- -----------------------------------------------------------------------------
 drop function if exists leg_time;
 delimiter //
-create function leg_time (ip_distance integer, ip_speed integer)
-	returns time reads sql data
+create function leg_time(ip_distance integer, ip_speed integer)
+    returns time
+    reads sql data
 begin
-	declare total_time decimal(10,2);
+    declare total_time decimal(10, 2);
     declare hours, minutes integer default 0;
     set total_time = ip_distance / ip_speed;
     set hours = truncate(total_time, 0);
@@ -48,16 +49,63 @@ since it will be used to carry passengers. */
 -- -----------------------------------------------------------------------------
 drop procedure if exists add_airplane;
 delimiter //
-create procedure add_airplane (in ip_airlineID varchar(50), in ip_tail_num varchar(50),
-	in ip_seat_capacity integer, in ip_speed integer, in ip_locationID varchar(50),
-    in ip_plane_type varchar(100), in ip_maintenanced boolean, in ip_model varchar(50),
-    in ip_neo boolean)
-sp_main: begin
+create procedure add_airplane(in ip_airlineID varchar(50), in ip_tail_num varchar(50),
+                              in ip_seat_capacity integer, in ip_speed integer, in ip_locationID varchar(50),
+                              in ip_plane_type varchar(100), in ip_maintenanced boolean, in ip_model varchar(50),
+                              in ip_neo boolean)
+sp_main:
+begin
 
-	-- Ensure that the plane type is valid: Boeing, Airbus, or neither
+    -- Ensure that the plane type is valid: Boeing, Airbus, or neither
     -- Ensure that the type-specific attributes are accurate for the type
     -- Ensure that the airplane and location values are new and unique
     -- Add airplane and location into respective tables
+
+    DECLARE duplicate_airplane INT DEFAULT 0;
+    DECLARE duplicate_location INT DEFAULT 0;
+
+    -- Check model types
+    IF ip_plane_type NOT IN ('Boeing', 'Airbus') AND ip_plane_type IS NOT NULL THEN
+        LEAVE sp_main;
+    END IF;
+
+    -- Check boeing invalid attributes
+    IF ip_plane_type = 'Boeing' AND (ip_model IS NULL OR ip_model = '' OR ip_maintenanced IS NULL) THEN
+        LEAVE sp_main;
+    END IF;
+
+    -- Check airbus invalid attributes
+    IF ip_plane_type = 'Airbus' AND ip_neo IS NULL THEN
+        LEAVE sp_main;
+    END IF;
+
+    -- Check for duplicates
+    SELECT COUNT(*)
+    INTO duplicate_airplane
+    FROM airplane
+    WHERE airlineID = ip_airlineID
+      AND tail_num = ip_tail_num;
+
+    IF duplicate_airplane > 0 THEN
+        LEAVE sp_main;
+    END IF;
+
+    -- check for duplicate location
+    IF ip_locationID IS NOT NULL THEN
+        SELECT COUNT(*)
+        INTO duplicate_location
+        FROM airplane
+        WHERE locationID = ip_locationID;
+
+        IF duplicate_location > 0 THEN
+            LEAVE sp_main;
+        END IF;
+    END IF;
+
+    INSERT INTO airplane (airlineID, tail_num, seat_capacity, speed, locationID, plane_type, maintenanced, model, neo)
+    VALUES (ip_airlineID, ip_tail_num, ip_seat_capacity, ip_speed, ip_locationID, ip_plane_type, ip_maintenanced,
+            ip_model, ip_neo);
+
 
 end //
 delimiter ;
@@ -71,11 +119,13 @@ descriptive name.  An airport must also have a city, state, and country designat
 -- -----------------------------------------------------------------------------
 drop procedure if exists add_airport;
 delimiter //
-create procedure add_airport (in ip_airportID char(3), in ip_airport_name varchar(200),
-    in ip_city varchar(100), in ip_state varchar(100), in ip_country char(3), in ip_locationID varchar(50))
-sp_main: begin
+create procedure add_airport(in ip_airportID char(3), in ip_airport_name varchar(200),
+                             in ip_city varchar(100), in ip_state varchar(100), in ip_country char(3),
+                             in ip_locationID varchar(50))
+sp_main:
+begin
 
-	-- Ensure that the airport and location values are new and unique
+    -- Ensure that the airport and location values are new and unique
     -- Add airport and location into respective tables
 
 end //
@@ -95,12 +145,13 @@ certain amount of funds needed to purchase tickets for flights. */
 -- -----------------------------------------------------------------------------
 drop procedure if exists add_person;
 delimiter //
-create procedure add_person (in ip_personID varchar(50), in ip_first_name varchar(100),
-    in ip_last_name varchar(100), in ip_locationID varchar(50), in ip_taxID varchar(50),
-    in ip_experience integer, in ip_miles integer, in ip_funds integer)
-sp_main: begin
+create procedure add_person(in ip_personID varchar(50), in ip_first_name varchar(100),
+                            in ip_last_name varchar(100), in ip_locationID varchar(50), in ip_taxID varchar(50),
+                            in ip_experience integer, in ip_miles integer, in ip_funds integer)
+sp_main:
+begin
 
-	-- Ensure that the location is valid
+    -- Ensure that the location is valid
     -- Ensure that the persion ID is unique
     -- Ensure that the person is a pilot or passenger
     -- Add them to the person table as well as the table of their respective role
@@ -115,10 +166,11 @@ doesn't exist, it must be created; and, if it aready exists, then it must be rem
 -- -----------------------------------------------------------------------------
 drop procedure if exists grant_or_revoke_pilot_license;
 delimiter //
-create procedure grant_or_revoke_pilot_license (in ip_personID varchar(50), in ip_license varchar(100))
-sp_main: begin
+create procedure grant_or_revoke_pilot_license(in ip_personID varchar(50), in ip_license varchar(100))
+sp_main:
+begin
 
-	-- Ensure that the person is a valid pilot
+    -- Ensure that the person is a valid pilot
     -- If license exists, delete it, otherwise add the license
 
 end //
@@ -135,12 +187,13 @@ takeoff along with its cost. */
 -- -----------------------------------------------------------------------------
 drop procedure if exists offer_flight;
 delimiter //
-create procedure offer_flight (in ip_flightID varchar(50), in ip_routeID varchar(50),
-    in ip_support_airline varchar(50), in ip_support_tail varchar(50), in ip_progress integer,
-    in ip_next_time time, in ip_cost integer)
-sp_main: begin
+create procedure offer_flight(in ip_flightID varchar(50), in ip_routeID varchar(50),
+                              in ip_support_airline varchar(50), in ip_support_tail varchar(50), in ip_progress integer,
+                              in ip_next_time time, in ip_cost integer)
+sp_main:
+begin
 
-	-- Ensure that the airplane exists
+    -- Ensure that the airplane exists
     -- Ensure that the route exists
     -- Ensure that the progress is less than the length of the route
     -- Create the flight with the airplane starting in on the ground
@@ -158,16 +211,17 @@ the passengers should have their frequent flyer miles updated. */
 -- -----------------------------------------------------------------------------
 drop procedure if exists flight_landing;
 delimiter //
-create procedure flight_landing (in ip_flightID varchar(50))
-sp_main: begin
+create procedure flight_landing(in ip_flightID varchar(50))
+sp_main:
+begin
 
-	-- Ensure that the flight exists
+    -- Ensure that the flight exists
     -- Ensure that the flight is in the air
-    
+
     -- Increment the pilot's experience by 1
     -- Increment the frequent flyer miles of all passengers on the plane
     -- Update the status of the flight and increment the next time to 1 hour later
-		-- Hint: use addtime()
+    -- Hint: use addtime()
 
 end //
 delimiter ;
@@ -183,16 +237,17 @@ off because of a pilot shortage, then the flight must be delayed for 30 minutes.
 -- -----------------------------------------------------------------------------
 drop procedure if exists flight_takeoff;
 delimiter //
-create procedure flight_takeoff (in ip_flightID varchar(50))
-sp_main: begin
+create procedure flight_takeoff(in ip_flightID varchar(50))
+sp_main:
+begin
 
-	-- Ensure that the flight exists
+    -- Ensure that the flight exists
     -- Ensure that the flight is on the ground
     -- Ensure that the flight has another leg to fly
     -- Ensure that there are enough pilots (1 for Airbus and general, 2 for Boeing)
-		-- If there are not enough, move next time to 30 minutes later
-        
-	-- Increment the progress and set the status to in flight
+    -- If there are not enough, move next time to 30 minutes later
+
+    -- Increment the progress and set the status to in flight
     -- Calculate the flight time using the speed of airplane and distance of leg
     -- Update the next time using the flight time
 
@@ -209,23 +264,24 @@ must be enough seats to accommodate all boarding passengers. */
 -- -----------------------------------------------------------------------------
 drop procedure if exists passengers_board;
 delimiter //
-create procedure passengers_board (in ip_flightID varchar(50))
-sp_main: begin
+create procedure passengers_board(in ip_flightID varchar(50))
+sp_main:
+begin
 
-	-- Ensure the flight exists
+    -- Ensure the flight exists
     -- Ensure that the flight is on the ground
     -- Ensure that the flight has further legs to be flown
-    
+
     -- Determine the number of passengers attempting to board the flight
     -- Use the following to check:
-		-- The airport the airplane is currently located at
-        -- The passengers are located at that airport
-        -- The passenger's immediate next destination matches that of the flight
-        -- The passenger has enough funds to afford the flight
-        
-	-- Check if there enough seats for all the passengers
-		-- If not, do not add board any passengers
-        -- If there are, board them and deduct their funds
+    -- The airport the airplane is currently located at
+    -- The passengers are located at that airport
+    -- The passenger's immediate next destination matches that of the flight
+    -- The passenger has enough funds to afford the flight
+
+    -- Check if there enough seats for all the passengers
+    -- If not, do not add board any passengers
+    -- If there are, board them and deduct their funds
 
 end //
 delimiter ;
@@ -238,18 +294,19 @@ be located at the destination airport as referenced by the ticket. */
 -- -----------------------------------------------------------------------------
 drop procedure if exists passengers_disembark;
 delimiter //
-create procedure passengers_disembark (in ip_flightID varchar(50))
-sp_main: begin
+create procedure passengers_disembark(in ip_flightID varchar(50))
+sp_main:
+begin
 
-	-- Ensure the flight exists
+    -- Ensure the flight exists
     -- Ensure that the flight is in the air
-    
+
     -- Determine the list of passengers who are disembarking
-	-- Use the following to check:
-		-- Passengers must be on the plane supporting the flight
-        -- Passenger has reached their immediate next destionation airport
-        
-	-- Move the appropriate passengers to the airport
+    -- Use the following to check:
+    -- Passengers must be on the plane supporting the flight
+    -- Passenger has reached their immediate next destionation airport
+
+    -- Move the appropriate passengers to the airport
     -- Update the vacation plans of the passengers
 
 end //
@@ -265,17 +322,18 @@ and have their location updated for the appropriate airplane. */
 -- -----------------------------------------------------------------------------
 drop procedure if exists assign_pilot;
 delimiter //
-create procedure assign_pilot (in ip_flightID varchar(50), ip_personID varchar(50))
-sp_main: begin
+create procedure assign_pilot(in ip_flightID varchar(50), ip_personID varchar(50))
+sp_main:
+begin
 
-	-- Ensure the flight exists
+    -- Ensure the flight exists
     -- Ensure that the flight is on the ground
     -- Ensure that the flight has further legs to be flown
-    
+
     -- Ensure that the pilot exists and is not already assigned
-	-- Ensure that the pilot has the appropriate license
+    -- Ensure that the pilot has the appropriate license
     -- Ensure the pilot is located at the airport of the plane that is supporting the flight
-    
+
     -- Assign the pilot to the flight and update their location to be on the plane
 
 end //
@@ -288,14 +346,15 @@ flight must have ended, and all passengers must have disembarked. */
 -- -----------------------------------------------------------------------------
 drop procedure if exists recycle_crew;
 delimiter //
-create procedure recycle_crew (in ip_flightID varchar(50))
-sp_main: begin
+create procedure recycle_crew(in ip_flightID varchar(50))
+sp_main:
+begin
 
-	-- Ensure that the flight is on the ground
+    -- Ensure that the flight is on the ground
     -- Ensure that the flight does not have any more legs
-    
+
     -- Ensure that the flight is empty of passengers
-    
+
     -- Update assignements of all pilots
     -- Move all pilots to the airport the plane of the flight is located at
 
@@ -310,14 +369,15 @@ end of its route.  And the flight must be empty - no pilots or passengers. */
 -- -----------------------------------------------------------------------------
 drop procedure if exists retire_flight;
 delimiter //
-create procedure retire_flight (in ip_flightID varchar(50))
-sp_main: begin
+create procedure retire_flight(in ip_flightID varchar(50))
+sp_main:
+begin
 
-	-- Ensure that the flight is on the ground
+    -- Ensure that the flight is on the ground
     -- Ensure that the flight does not have any more legs
-    
+
     -- Ensure that there are no more people on the plane supporting the flight
-    
+
     -- Remove the flight from the system
 
 end //
@@ -345,20 +405,21 @@ retired from the system. */
 -- -----------------------------------------------------------------------------
 drop procedure if exists simulation_cycle;
 delimiter //
-create procedure simulation_cycle ()
-sp_main: begin
+create procedure simulation_cycle()
+sp_main:
+begin
 
-	-- Identify the next flight to be processed
-    
+    -- Identify the next flight to be processed
+
     -- If the flight is in the air:
-		-- Land the flight and disembark passengers
-        -- If it has reached the end:
-			-- Recycle crew and retire flight
-            
-	-- If the flight is on the ground:
-		-- Board passengers and have the plane takeoff
-        
-	-- Hint: use the previously created procedures
+    -- Land the flight and disembark passengers
+    -- If it has reached the end:
+    -- Recycle crew and retire flight
+
+    -- If the flight is on the ground:
+    -- Board passengers and have the plane takeoff
+
+    -- Hint: use the previously created procedures
 
 end //
 delimiter ;
@@ -372,8 +433,10 @@ departure and arrival airport, the list of those flights (ordered by their
 flight IDs), the earliest and latest arrival times for the destinations and the 
 list of planes (by their respective flight IDs) flying these flights. */
 -- -----------------------------------------------------------------------------
-create or replace view flights_in_the_air (departing_from, arriving_at, num_flights,
-	flight_list, earliest_arrival, latest_arrival, airplane_list) as
+create or replace view flights_in_the_air
+            (departing_from, arriving_at, num_flights,
+             flight_list, earliest_arrival, latest_arrival, airplane_list)
+as
 select '_', '_', '_', '_', '_', '_', '_';
 
 -- [15] flights_on_the_ground()
@@ -385,8 +448,10 @@ each airport (ordered by their flight IDs), the earliest and latest arrival time
 amongst all of these flights at each airport, and the list of planes (by their 
 respective flight IDs) that are departing from each airport.*/
 -- ------------------------------------------------------------------------------
-create or replace view flights_on_the_ground (departing_from, num_flights,
-	flight_list, earliest_arrival, latest_arrival, airplane_list) as 
+create or replace view flights_on_the_ground
+            (departing_from, num_flights,
+             flight_list, earliest_arrival, latest_arrival, airplane_list)
+as
 select '_', '_', '_', '_', '_', '_';
 
 -- [16] people_in_the_air()
@@ -399,10 +464,22 @@ and latest arrival times of these people, the number of these people that are
 pilots, the number of these people that are passengers, the total number of 
 people on the airplane, and the list of these people by their person id. */
 -- -----------------------------------------------------------------------------
-create or replace view people_in_the_air (departing_from, arriving_at, num_airplanes,
-	airplane_list, flight_list, earliest_arrival, latest_arrival, num_pilots,
-	num_passengers, joint_pilots_passengers, person_list) as
-select '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_';
+create or replace view people_in_the_air
+            (departing_from, arriving_at, num_airplanes,
+             airplane_list, flight_list, earliest_arrival, latest_arrival, num_pilots,
+             num_passengers, joint_pilots_passengers, person_list)
+as
+select '_',
+       '_',
+       '_',
+       '_',
+       '_',
+       '_',
+       '_',
+       '_',
+       '_',
+       '_',
+       '_';
 
 -- [17] people_on_the_ground()
 -- -----------------------------------------------------------------------------
@@ -413,9 +490,20 @@ airports, the number of these people that are pilots, the number of these people
 that are passengers, the total number people at the airport, and the list of 
 these people by their person id. */
 -- -----------------------------------------------------------------------------
-create or replace view people_on_the_ground (departing_from, airport, airport_name,
-	city, state, country, num_pilots, num_passengers, joint_pilots_passengers, person_list) as
-select '_', '_', '_', '_', '_', '_', '_', '_', '_', '_';
+create or replace view people_on_the_ground
+            (departing_from, airport, airport_name,
+             city, state, country, num_pilots, num_passengers, joint_pilots_passengers, person_list)
+as
+select '_',
+       '_',
+       '_',
+       '_',
+       '_',
+       '_',
+       '_',
+       '_',
+       '_',
+       '_';
 
 -- [18] route_summary()
 -- -----------------------------------------------------------------------------
@@ -424,8 +512,10 @@ the number of legs per route, the legs of the route in sequence, the total
 distance of the route, the number of flights on this route, the flightIDs of 
 those flights by flight ID, and the sequence of airports visited by the route. */
 -- -----------------------------------------------------------------------------
-create or replace view route_summary (route, num_legs, leg_sequence, route_length,
-	num_flights, flight_list, airport_sequence) as
+create or replace view route_summary
+            (route, num_legs, leg_sequence, route_length,
+             num_flights, flight_list, airport_sequence)
+as
 select '_', '_', '_', '_', '_', '_', '_';
 
 -- [19] alternative_airports()
@@ -434,6 +524,8 @@ select '_', '_', '_', '_', '_', '_', '_';
 specify the city, state, the number of airports shared, and the lists of the 
 airport codes and airport names that are shared both by airport ID. */
 -- -----------------------------------------------------------------------------
-create or replace view alternative_airports (city, state, country, num_airports,
-	airport_code_list, airport_name_list) as
+create or replace view alternative_airports
+            (city, state, country, num_airports,
+             airport_code_list, airport_name_list)
+as
 select '_', '_', '_', '_', '_', '_';

@@ -162,7 +162,7 @@ create table Pilot
     experience int UNSIGNED,
     check (
 		taxID IS NULL OR taxID REGEXP '^[0-9]{3}-[0-9]{2}-[0-9]{4}$'
-	) ,
+	),
     personID   varchar(8)  NOT NULL,
     flightID char(5),
     FOREIGN KEY (personID) REFERENCES Person (personID) ON UPDATE RESTRICT ON DELETE CASCADE,
