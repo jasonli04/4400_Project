@@ -279,6 +279,52 @@ begin
     -- Update the status of the flight and increment the next time to 1 hour later
     -- Hint: use addtime()
 
+    declare airplane_location VARCHAR(50);
+    declare curr_status VARCHAR(100);
+    declare curr_next_time TIME;
+    declare flight_miles INT;
+
+    select airplane_status, next_time
+    into
+        curr_status, curr_next_time
+    from flight
+    where flightId = ip_flightID;
+
+    if curr_status != 'in_flight' then
+        leave sp_main;
+    end if;
+
+    select a.locationID
+    into airplane_location
+    from flight f
+             join airplane a on f.support_airline = a.airlineID
+        and f.support_tail = a.tail_num
+    where f.flightID = ip_flightID;
+
+    select l.distance
+    into flight_miles
+    from flight f
+             join route_path rp ON f.routeID = rp.routeID
+             join leg l ON rp.legID = l.legID
+    where f.flightID = ip_flightID
+      and rp.sequence = f.progress;
+
+    update pilot
+    set experience = experience + 1
+    where commanding_flight = ip_flightID;
+
+
+    update passenger p
+        join person pe on p.personID = pe.personId
+    set p.miles = p.miles + flight_miles
+    where pe.locationID = airplane_location;
+
+    update flight
+    set airplane_status = 'on_ground',
+        next_time       = ADDTIME(next_time, '01:00:00')
+    where flightID = ip_flightID;
+
+
 end //
 delimiter ;
 
