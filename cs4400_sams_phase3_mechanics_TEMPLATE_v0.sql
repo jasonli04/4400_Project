@@ -187,28 +187,28 @@ begin
     -- Ensure that the persion ID is unique
     -- Ensure that the person is a pilot or passenger
     -- Add them to the person table as well as the table of their respective role
-    
+
     IF ip_locationID NOT IN (select locationID from location) THEN
-		LEAVE sp_main;
-	END IF;
-    
+        LEAVE sp_main;
+    END IF;
+
     IF ip_personID IN (select personID from person) THEN
-		LEAVE sp_main;
-	END IF;
-    
+        LEAVE sp_main;
+    END IF;
+
     IF ip_taxID IS NOT NULL and ip_experience IS NOT NULL and ip_experience > 0 THEN
-		INSERT INTO person (personID, first_name, last_name, locationID)
+        INSERT INTO person (personID, first_name, last_name, locationID)
         VALUES (ip_personID, ip_first_name, ip_last_name, ip_locationID);
         INSERT INTO pilot (personID, taxID, experience, commanding_flight)
         VALUES (ip_personID, ip_taxID, ip_experience, NULL);
-	END IF;
-    
+    END IF;
+
     IF ip_miles IS NOT NULL and ip_miles > 0 and ip_funds IS NOT NULL and ip_funds > 0 THEN
-		INSERT INTO person (personID, first_name, last_name, locationID)
+        INSERT INTO person (personID, first_name, last_name, locationID)
         VALUES (ip_personID, ip_first_name, ip_last_name, ip_locationID);
         INSERT INTO passenger (personID, miles, funds)
         VALUES (ip_personID, ip_miles, ip_funds);
-	END IF;
+    END IF;
 
 end //
 delimiter ;
@@ -275,19 +275,19 @@ begin
     -- Ensure that the route exists
     -- Ensure that the progress is less than the length of the route
     -- Create the flight with the airplane starting in on the ground
-    
+
     IF (ip_support_airline, ip_support_tail) not in (select airlineID, tail_num from airplane) THEN
-		LEAVE sp_main;
-	END IF;
-    
+        LEAVE sp_main;
+    END IF;
+
     IF ip_routeID not in (select routeID from route) THEN
-		LEAVE sp_main;
-	END IF;
-    
+        LEAVE sp_main;
+    END IF;
+
     IF ip_progress >= (select max(sequence) from route_path group by routeID having routeID = ip_routeID) THEN
-    	LEAVE sp_main;
-	END IF;
-    
+        LEAVE sp_main;
+    END IF;
+
     INSERT INTO flight (flightID, routeID, support_airline, support_tail, progress, airplane_status, next_time, cost)
     VALUES (ip_flightID, ip_routeID, ip_support_airline, ip_support_tail, ip_progress, 'on_ground', ip_next_time, ip_cost);
 
@@ -482,16 +482,17 @@ begin
     declare seat_capacity INT;
     declare next_dest CHAR(3);
     declare boarding_count INT;
+    declare curr_airport CHAR(3);
     declare q_route_id VARCHAR(50);
 
+    -- verify flight exists and can be boarded
     select count(*) into flight_count from flight where flightID = ip_flightID;
     if flight_count != 1 then
         leave sp_main;
     end if;
 
     select airplane_status, cost, progress, routeID
-    into
-        flight_status, flight_cost, curr_progress, q_route_id
+    into flight_status, flight_cost, curr_progress, q_route_id
     from flight
     where flightID = ip_flightID;
 
@@ -511,10 +512,15 @@ begin
     select a.locationID, a.seat_capacity
     into airplane_loc, seat_capacity
     from flight f
-             join airplane a on f.support_airline = a.airlineID
-        and f.support_tail = a.tail_num
+             join airplane a on f.support_airline = a.airlineID and f.support_tail = a.tail_num
     where f.flightID = ip_flightID;
 
+    -- get the current airport of the airplane
+    select airportID into curr_airport
+    from airport
+    where locationID = airplane_loc;
+
+    -- get the next destination in the route
     select l.arrival
     into next_dest
     from route_path rp
@@ -522,30 +528,40 @@ begin
     where rp.routeID = q_route_id
       and rp.sequence = curr_progress + 1;
 
+    -- count passengers who want to board and check that they can board
     select count(*)
     into boarding_count
-    from person p 
+    from person p
              join passenger pa on p.personID = pa.personID
-             join (select personID, min(sequence) as next_seq, airportID
-                   from passenger_vacations
-                   group by personID) pv on p.personID = pv.personID
+             join (
+        select pv.personID, min(pv.sequence) as next_seq
+        from passenger_vacations pv
+        group by pv.personID
+    ) as pv_min on p.personID = pv_min.personID
+             join passenger_vacations pv_next on p.personID = pv_next.personID and pv_next.sequence = pv_min.next_seq
     where p.locationID = airplane_loc
-      and pv.airportID = next_dest
+      and pv_next.airportID = next_dest
       and pa.funds >= flight_cost;
 
     if boarding_count > seat_capacity then
         leave sp_main;
     end if;
 
-    update passenger p
-        join person pe on p.personID = pe.personID
-        join (select personID, min(sequence) as next_seq, airportID
-              from passenger_vacations
-              group by personID) pv on pe.personID = pv.personID
-    set p.funds = p.funds - flight_cost
-    where pe.locationID = airplane_loc
-      and pv.airportID = next_dest
-      and p.funds >= flight_cost;
+    -- update passenger funds and move them to the airplane
+    update passenger pa
+        join person p on pa.personID = p.personID
+        join (
+            select pv.personID, min(pv.sequence) as next_seq
+            from passenger_vacations pv
+            group by pv.personID
+        ) as pv_min on p.personID = pv_min.personID
+        join passenger_vacations pv_next on p.personID = pv_next.personID and pv_next.sequence = pv_min.next_seq
+    set
+        pa.funds = pa.funds - flight_cost,
+        p.locationID = airplane_loc
+    where p.locationID = airplane_loc
+      and pv_next.airportID = next_dest
+      and pa.funds >= flight_cost;
 
 end //
 delimiter ;
@@ -659,6 +675,92 @@ begin
 
     -- Assign the pilot to the flight and update their location to be on the plane
 
+    declare flight_count INT;
+    declare flight_status VARCHAR(100);
+    declare curr_progress INT;
+    declare total_route_legs INT;
+    declare q_route_id VARCHAR(50);
+    declare pilot_count INT;
+    declare pilot_assigned_count INT;
+    declare airplane_loc VARCHAR(50);
+    declare airplane_airport_loc VARCHAR(50);
+    declare pilot_loc VARCHAR(50);
+    declare airplane_type VARCHAR(100);
+    declare license_count INT;
+
+    select count(*) into flight_count from flight where flightID = ip_flightID;
+    if flight_count != 1 then
+        leave sp_main;
+    end if;
+
+    select airplane_status, progress, routeID
+    into flight_status, curr_progress, q_route_id
+    from flight
+    where flightID = ip_flightID;
+
+    if flight_status != 'on_ground' then
+        leave sp_main;
+    end if;
+
+    select max(sequence)
+    into total_route_legs
+    from route_path
+    where routeID = q_route_id;
+
+    if curr_progress >= total_route_legs then
+        leave sp_main;
+    end if;
+
+    select airplane_type, a.locationID
+    into airplane_type, airplane_loc
+    from flight f
+             join airplane a on f.support_airline = a.airlineID and f.support_tail = a.tail_num
+    where f.flightID = ip_flightID;
+
+    select a.locationID into airplane_airport_loc
+    from airport a
+             join leg l on a.airportID = l.departure
+             join route_path rp on l.legID = rp.legID
+    where rp.routeID = q_route_id
+      and rp.sequence = curr_progress;
+
+    select locationID
+    into pilot_loc
+    from person
+    where personID = ip_personID;
+
+    select count(*)
+    into pilot_count
+    from pilot
+    where personID = ip_personID;
+
+    select count(*)
+    into pilot_assigned_count
+    from pilot
+    where commanding_flight = ip_flightID;
+
+    select count(*)
+    into license_count
+    from pilot_licenses
+    where personID = ip_personID
+      and license = airplane_type;
+
+    if pilot_count = 0 or pilot_assigned_count > 0 or license_count = 0 then
+        leave sp_main;
+    end if;
+
+    if pilot_loc != airplane_airport_loc then
+        leave sp_main;
+    end if;
+
+    update pilot
+    set commanding_flight = ip_flightID
+    where personID = ip_personID;
+
+    update person
+    set locationID = airplane_loc
+    where personID = ip_personID;
+
 end //
 delimiter ;
 
@@ -681,6 +783,59 @@ begin
     -- Update assignements of all pilots
     -- Move all pilots to the airport the plane of the flight is located at
 
+    declare flight_status varchar(100);
+    declare curr_progress int;
+    declare total_route_legs int;
+    declare airplane_loc varchar(50);
+    declare routeId varchar(50);
+    declare passengerCount int default 0;
+
+    select airplane_status, progress, routeID
+    into flight_status, curr_progress, routeId
+    from flight
+    where flightID = ip_flightID;
+
+    if flight_status != 'on_ground' then
+        leave sp_main;
+    end if;
+
+    select max(sequence)
+    into total_route_legs
+    from route_path
+    where routeID = routeId;
+
+    if curr_progress < total_route_legs then
+        leave sp_main;
+    end if;
+
+    -- check the flight has no passengers
+    select a.locationID
+    into airplane_loc
+    from flight f
+             join airplane a on f.support_airline = a.airlineID and f.support_tail = a.tail_num
+    where f.flightID = ip_flightID;
+
+    select count(*)
+    into passengerCount
+    from passenger p
+             join person pe on p.personID = pe.personID
+    where pe.locationID = airplane_loc;
+
+    select a.locationID
+    into airplane_loc
+    from airport a
+             join leg l on a.airportID = l.arrival
+             join route_path rp on l.legID = rp.legID
+    where rp.routeID = routeId
+      and rp.sequence = curr_progress;
+
+    update pilot
+    set commanding_flight = NULL
+    where commanding_flight = ip_flightID;
+
+    update person
+    set locationID = airplane_loc
+    where locationID = ip_flightID;
 end //
 delimiter ;
 
@@ -702,6 +857,62 @@ begin
     -- Ensure that there are no more people on the plane supporting the flight
 
     -- Remove the flight from the system
+
+    declare flight_status varchar(100);
+    declare curr_progress int;
+    declare total_route_legs int;
+    declare airplane_loc varchar(50);
+    declare pilotCount int default 0;
+    declare passengerCount int default 0;
+    declare routeId varchar(50);
+
+    select airplane_status, progress, routeID
+    into flight_status, curr_progress, routeId
+    from flight
+    where flightID = ip_flightID;
+
+    if flight_status != 'on_ground' then
+        leave sp_main;
+    end if;
+
+    select max(sequence)
+    into total_route_legs
+    from route_path
+    where routeID = routeId;
+
+    if curr_progress <> 0 and curr_progress <> total_route_legs then
+        leave sp_main;
+    end if;
+
+    select count(*)
+    into pilotCount
+    from pilot
+    where commanding_flight = ip_flightID;
+
+    if pilotCount > 0 then
+        leave sp_main;
+    end if;
+
+
+    select a.locationID
+    into airplane_loc
+    from flight f
+             join airplane a on f.support_airline = a.airlineID and f.support_tail = a.tail_num
+    where f.flightID = ip_flightID;
+
+
+    select count(*)
+    into passengerCount
+    from passenger p
+             join person pe on p.personID = pe.personID
+    where pe.locationID = airplane_loc;
+
+    if passengerCount > 0 then
+        leave sp_main;
+    end if;
+
+    delete from flight
+    where flightID = ip_flightID;
 
 end //
 delimiter ;
@@ -744,8 +955,57 @@ begin
 
     -- Hint: use the previously created procedures
 
+    declare next_flight_id varchar(50);
+    declare flight_status varchar(100);
+    declare flight_next_time time;
+    declare flight_progress int;
+    declare total_route_legs int;
+    declare route_id varchar(50);
+
+    -- find the next flight to process, based on smallest next_time
+    select flightID, airplane_status, next_time, progress, routeID
+    into next_flight_id, flight_status, flight_next_time, flight_progress, route_id
+    from flight
+    order by next_time, (case when airplane_status = 'landing' then 0 else 1 end), flightID
+    limit 1;
+
+    -- if no flights to process, exit the procedure
+    if next_flight_id is null then
+        leave sp_main;
+    end if;
+
+    -- if the flight is in the air and about to land
+    if flight_status = 'in_flight' then
+        -- ensure the flight is landing at the next stop
+        call flight_landing(next_flight_id);
+
+        -- advance the time by 1 hour (as per the requirement)
+        update flight
+        set next_time = addtime(flight_next_time, '01:00:00')
+        where flightID = next_flight_id;
+
+        -- if the flight has reached the end of the route, recycle crew and retire flight
+        select max(sequence)
+        into total_route_legs
+        from route_path
+        where routeID = route_id;
+
+        if flight_progress = total_route_legs then
+            -- recycle the crew and retire the flight
+            call recycle_crew(next_flight_id);
+            call retire_flight(next_flight_id);
+        end if;
+    end if;
+
+    -- if the flight is on the ground and waiting to take off
+    if flight_status = 'on_ground' then
+        call passengers_board(next_flight_id);
+        call flight_takeoff(next_flight_id);
+    end if;
+
 end //
 delimiter ;
+
 
 -- [14] flights_in_the_air()
 -- -----------------------------------------------------------------------------
@@ -760,7 +1020,13 @@ create or replace view flights_in_the_air
             (departing_from, arriving_at, num_flights,
              flight_list, earliest_arrival, latest_arrival, airplane_list)
 as
-select '_', '_', '_', '_', '_', '_', '_';
+select '_',
+       '_',
+       '_',
+       '_',
+       '_',
+       '_',
+       '_';
 
 -- [15] flights_on_the_ground()
 -- ------------------------------------------------------------------------------
@@ -775,7 +1041,13 @@ create or replace view flights_on_the_ground
             (departing_from, num_flights,
              flight_list, earliest_arrival, latest_arrival, airplane_list)
 as
-select '_', '_', '_', '_', '_', '_';
+select
+    '_',
+    '_',
+    '_',
+    '_',
+    '_',
+    '_';
 
 -- [16] people_in_the_air()
 -- -----------------------------------------------------------------------------
