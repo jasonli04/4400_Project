@@ -389,7 +389,58 @@ begin
     -- Increment the progress and set the status to in flight
     -- Calculate the flight time using the speed of airplane and distance of leg
     -- Update the next time using the flight time
-
+    
+    DECLARE numPilots INT DEFAULT 0;
+    DECLARE ip_support_airline varchar(64);
+    DECLARE ip_support_tail varchar(64);
+    DECLARE ip_speed INT DEFAULT 0;
+    DECLARE ip_distance INT DEFAULT 0;
+    
+    
+    IF ip_flightID not in (select flightID from flight) THEN
+		LEAVE sp_main;
+	END IF;
+    
+    IF (select airplane_status from flight where flightID = ip_flightID) not like 'on_ground' THEN
+		LEAVE sp_main;
+	END IF;
+    
+    select support_airline into ip_support_airline from flight where flightID = ip_flightID;
+    select support_tail into ip_support_tail from flight where flightID = ip_flightID;
+    
+    IF (select progress from flight where flightID = ip_flightID)
+    >= (select max(sequence) from route_path group by routeID having
+    routeID = (select routeID from flight where flightID = ip_flightID)) THEN
+    	LEAVE sp_main;
+	END IF;
+    
+    select count(*) into numPilots from pilot where commanding_flight = ip_flightID;
+    
+    IF ((select plane_type from airplane
+    where ip_support_airline = airlineID
+    and ip_support_tail = tail_num) like 'Airbus' and numPilots < 1)
+    OR
+    ((select plane_type from airplane
+    where ip_support_airline = airlineID
+    and ip_support_tail = tail_num) like 'Boeing' and numPilots < 2)
+    THEN
+        UPDATE flight SET next_time = ADDTIME(next_time, '00:30:00') where flightID = ip_flightID;
+	END IF;
+    
+    UPDATE flight SET progress = progress + 1 where flightID = ip_flightID;
+    UPDATE flight SET airplane_status = 'in_flight' where flightID = ip_flightID;
+    
+    SELECT l.distance into ip_distance from flight f
+    join route_path rp on f.routeID = rp.routeID
+    join leg l on rp.legID = l.legID
+    where rp.sequence = f.progress and flightID = ip_flightID;
+    
+    SELECT speed into ip_speed from
+    flight f join airplane a on f.support_airline = a.airlineID and f.support_tail = a.tail_num
+    where flightID = ip_flightID;
+    
+    UPDATE flight SET next_time = ADDTIME(next_time, SEC_TO_TIME((ip_distance / ip_speed) * 3600)) where flightID = ip_flightID;
+    
 end //
 delimiter ;
 
@@ -521,6 +572,65 @@ begin
 
     -- Move the appropriate passengers to the airport
     -- Update the vacation plans of the passengers
+    
+	DECLARE current_airport CHAR(3);
+	DECLARE current_location VARCHAR(50);
+	DECLARE plane_location VARCHAR(50);
+
+	IF ip_flightID not in (select flightID from flight) THEN
+		LEAVE sp_main;
+	END IF;
+
+	IF (select airplane_status from flight where flightID = ip_flightID) != 'on_ground' THEN
+		LEAVE sp_main;
+	END IF;
+
+	SELECT arrival INTO current_airport
+	FROM leg
+	WHERE legID = (
+		SELECT legID 
+		FROM route_path 
+		WHERE routeID = (SELECT routeID FROM flight WHERE flightID = ip_flightID)
+		AND sequence = (SELECT progress FROM flight WHERE flightID = ip_flightID)
+	);
+
+	SELECT locationID INTO current_location 
+	FROM airport 
+	WHERE airportID = current_airport;
+
+	SELECT locationID INTO plane_location 
+	FROM airplane 
+	WHERE airlineID = (SELECT support_airline FROM flight WHERE flightID = ip_flightID)
+	AND tail_num = (SELECT support_tail FROM flight WHERE flightID = ip_flightID);
+
+	CREATE TEMPORARY TABLE disembarking_passengers AS
+	SELECT p.personID, pv.sequence as min_seq
+	FROM person p
+	JOIN passenger pa ON p.personID = pa.personID
+	JOIN passenger_vacations pv ON p.personID = pv.personID
+	WHERE p.locationID = plane_location
+	AND pv.airportID = current_airport
+	AND pv.sequence = (
+		SELECT MIN(sequence)
+		FROM passenger_vacations
+		WHERE personID = p.personID
+	);
+
+	UPDATE person
+	SET locationID = current_location
+	WHERE personID IN (SELECT personID FROM disembarking_passengers);
+
+	DELETE FROM passenger_vacations
+	WHERE (personID, sequence) IN (
+		SELECT personID, min_seq FROM disembarking_passengers
+	);
+
+	UPDATE passenger_vacations pv
+	INNER JOIN disembarking_passengers dp ON pv.personID = dp.personID
+	SET pv.sequence = pv.sequence - 1
+	WHERE pv.sequence > dp.min_seq;
+
+	DROP TEMPORARY TABLE IF EXISTS disembarking_passengers;
 
 end //
 delimiter ;
