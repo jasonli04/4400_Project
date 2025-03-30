@@ -766,8 +766,8 @@ delimiter ;
 
 -- [11] recycle_crew()
 -- -----------------------------------------------------------------------------
-/* This stored procedure releases the assignments for a given flight crew.  The
-flight must have ended, and all passengers must have disembarked. */
+-- /* This stored procedure releases the assignments for a given flight crew.  The
+-- flight must have ended, and all passengers must have disembarked. */
 -- -----------------------------------------------------------------------------
 drop procedure if exists recycle_crew;
 delimiter //
@@ -789,53 +789,61 @@ begin
     declare airplane_loc varchar(50);
     declare routeId varchar(50);
     declare passengerCount int default 0;
+    declare airport_loc varchar(50);
 
-    select airplane_status, progress, routeID
-    into flight_status, curr_progress, routeId
-    from flight
-    where flightID = ip_flightID;
+	select airplane_status into flight_status 
+    from flight where flightID = ip_flightID;
+    
+    select progress into curr_progress
+    from flight where flightID = ip_flightID;
+    
+    select routeID into routeId
+    from flight where flightID = ip_flightID;
 
-    if flight_status != 'on_ground' then
-        leave sp_main;
-    end if;
+    -- select airplane_status, progress, routeID
+--     into flight_status, curr_progress, routeId
+--     from flight
+--     where flightID = ip_flightID;
 
-    select max(sequence)
-    into total_route_legs
+    -- if airplane not on ground, exit the procedure
+    if airplane_status != 'on_ground' then
+		leave sp_main;
+	end if;
+
+    -- if flight has not ended
+    select max(sequence) into total_route_legs
     from route_path
     where routeID = routeId;
 
-    if curr_progress < total_route_legs then
+    if curr_progress != total_route_legs then
         leave sp_main;
     end if;
 
-    -- check the flight has no passengers
-    select a.locationID
-    into airplane_loc
-    from flight f
-             join airplane a on f.support_airline = a.airlineID and f.support_tail = a.tail_num
-    where f.flightID = ip_flightID;
-
-    select count(*)
-    into passengerCount
+    -- if there are passengers on the plane
+    select count(*) into passengerCount
     from passenger p
-             join person pe on p.personID = pe.personID
+    join person pe on p.personID = pe.personID
     where pe.locationID = airplane_loc;
 
-    select a.locationID
-    into airplane_loc
+    if passengerCount > 0 then
+        leave sp_main;
+    end if;
+
+    -- retrieve the airport location
+    select locationID into airport_loc
     from airport a
-             join leg l on a.airportID = l.arrival
-             join route_path rp on l.legID = rp.legID
-    where rp.routeID = routeId
-      and rp.sequence = curr_progress;
+    join leg l on a.airportID = l.arrival
+    join route_path rp on l.legID = rp.legID
+    where rp.routeID = routeId and rp.sequence = total_route_legs;
+
+    -- recycle the crew and move them to the airport
+    update person
+    set locationID = airport_loc
+    where personID in (select personID from pilot where commanding_flight = ip_flightID);
 
     update pilot
     set commanding_flight = NULL
     where commanding_flight = ip_flightID;
-
-    update person
-    set locationID = airplane_loc
-    where locationID = ip_flightID;
 end //
 delimiter ;
 
