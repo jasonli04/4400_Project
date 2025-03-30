@@ -474,16 +474,17 @@ begin
     -- If there are, board them and deduct their funds
 
     declare flight_count INT;
-    declare flight_status VARCHAR(100);
-    declare flight_cost INT;
-    declare curr_progress INT;
-    declare total_route_legs INT;
-    declare airplane_loc VARCHAR(50);
-    declare seat_capacity INT;
-    declare next_dest CHAR(3);
-    declare boarding_count INT;
-    declare curr_airport CHAR(3);
-    declare q_route_id VARCHAR(50);
+	declare flight_status VARCHAR(100);
+	declare flight_cost INT;
+	declare curr_progress INT;
+	declare total_route_legs INT;
+	declare airplane_loc VARCHAR(50);
+	declare seat_capacity INT;
+	declare next_dest CHAR(3);
+	declare boarding_count INT;
+	declare curr_airport CHAR(3);
+	declare airport_loc VARCHAR(50);
+	declare q_route_id VARCHAR(50);
 
     -- verify flight exists and can be boarded
     select count(*) into flight_count from flight where flightID = ip_flightID;
@@ -516,10 +517,20 @@ begin
     where f.flightID = ip_flightID;
 
     -- get the current airport of the airplane
-    select airportID into curr_airport
-    from airport
-    where locationID = airplane_loc;
+    if curr_progress = 0 then
+		select l.departure into curr_airport
+		from route_path rp join leg l on rp.legID = l.legID
+		where rp.routeID = q_route_id and rp.sequence = 1;
+	else
+		select l.arrival into curr_airport
+		from route_path rp join leg l on rp.legID = l.legID
+		where rp.routeID = q_route_id and rp.sequence = curr_progress;
+	end if;
 
+	select locationID into airport_loc
+	from airport
+	where airportID = curr_airport;
+    
     -- get the next destination in the route
     select l.arrival
     into next_dest
@@ -539,7 +550,7 @@ begin
         group by pv.personID
     ) as pv_min on p.personID = pv_min.personID
              join passenger_vacations pv_next on p.personID = pv_next.personID and pv_next.sequence = pv_min.next_seq
-    where p.locationID = airplane_loc
+    where p.locationID = airport_loc
       and pv_next.airportID = next_dest
       and pa.funds >= flight_cost;
 
@@ -559,7 +570,7 @@ begin
     set
         pa.funds = pa.funds - flight_cost,
         p.locationID = airplane_loc
-    where p.locationID = airplane_loc
+    where p.locationID = airport_loc
       and pv_next.airportID = next_dest
       and pa.funds >= flight_cost;
 
