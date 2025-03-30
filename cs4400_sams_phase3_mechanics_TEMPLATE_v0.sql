@@ -692,18 +692,22 @@ begin
     declare total_route_legs INT;
     declare q_route_id VARCHAR(50);
     declare pilot_count INT;
+    declare pilot_license_count INT;
     declare pilot_assigned_count INT;
     declare airplane_loc VARCHAR(50);
-    declare airplane_airport_loc VARCHAR(50);
+    declare departure_airport VARCHAR(3);
+    declare airport_loc VARCHAR(50);
     declare pilot_loc VARCHAR(50);
     declare airplane_type VARCHAR(100);
     declare license_count INT;
 
+	-- verify flight exists
     select count(*) into flight_count from flight where flightID = ip_flightID;
     if flight_count != 1 then
         leave sp_main;
     end if;
 
+	-- verify flight is on ground
     select airplane_status, progress, routeID
     into flight_status, curr_progress, q_route_id
     from flight
@@ -713,57 +717,67 @@ begin
         leave sp_main;
     end if;
 
+	-- verify flight has further legs to be flown
     select max(sequence)
     into total_route_legs
     from route_path
     where routeID = q_route_id;
-
+    
     if curr_progress >= total_route_legs then
         leave sp_main;
     end if;
 
-    select airplane_type, a.locationID
-    into airplane_type, airplane_loc
-    from flight f
-             join airplane a on f.support_airline = a.airlineID and f.support_tail = a.tail_num
+	-- verify the pilot can be assigned
+	if (select commanding_flight from pilot where personID = ip_personID) is not NULL then
+		leave sp_main;
+	end if;
+        
+    -- verify pilot has appropriate license by getting airplane type and matching it to the license the pilot has
+    select a.plane_type into airplane_type
+    from airplane a join flight f 
+    on f.support_airline = a.airlineID and f.support_tail = a.tail_num
     where f.flightID = ip_flightID;
+        
+    select count(*) into pilot_license_count
+    from pilot_licenses 
+    where personID = ip_personID and
+    license = airplane_type;
+    
+    if pilot_license_count < 1 then
+		leave sp_main;
+	end if;
+    
+    -- verify pilot airport location matches airplane airport location
+    select p.locationID into pilot_loc
+    from person p
+    where p.personID = ip_personID;
 
-    select a.locationID into airplane_airport_loc
-    from airport a
-             join leg l on a.airportID = l.departure
-             join route_path rp on l.legID = rp.legID
-    where rp.routeID = q_route_id
-      and rp.sequence = curr_progress;
+    select departure into departure_airport
+    from leg where legID = (
+        select legID
+        from route_path
+        where routeID = q_route_id
+          and sequence = curr_progress + 1
+    );    
 
-    select locationID
-    into pilot_loc
-    from person
-    where personID = ip_personID;
-
-    select count(*)
-    into pilot_count
-    from pilot
-    where personID = ip_personID;
-
-    select count(*)
-    into pilot_assigned_count
-    from pilot
-    where commanding_flight = ip_flightID;
-
-    select count(*)
-    into license_count
-    from pilot_licenses
-    where personID = ip_personID
-      and license = airplane_type;
-
-    if pilot_count = 0 or pilot_assigned_count > 0 or license_count = 0 then
+    select locationID into airport_loc
+    from airport
+    where airportID = departure_airport;
+    
+    if airport_loc is NULL then
+		leave sp_main;
+	end if;
+    
+    if pilot_loc != airport_loc then
         leave sp_main;
     end if;
-
-    if pilot_loc != airplane_airport_loc then
-        leave sp_main;
-    end if;
-
+        
+    -- assign the pilot and set them to the new location
+    select a.locationID into airplane_loc
+    from airplane a join flight f
+    on f.support_airline = a.airlineID and f.support_tail = a.tail_num
+    where f.flightID = ip_flightID;
+    
     update pilot
     set commanding_flight = ip_flightID
     where personID = ip_personID;
@@ -798,38 +812,38 @@ begin
     declare curr_progress int;
     declare total_route_legs int;
     declare airplane_loc varchar(50);
-    declare routeId varchar(50);
+    declare route_id varchar(50);
     declare passengerCount int default 0;
+	declare arrival_airport varchar(3);
     declare airport_loc varchar(50);
-
-	select airplane_status into flight_status 
+    
+	select airplane_status, progress, routeID
+    into flight_status, curr_progress, route_id
+    from flight where flightID = ip_flightID;
+        
+	select airplane_status, progress, routeID
+    into flight_status, curr_progress, route_id
     from flight where flightID = ip_flightID;
     
-    select progress into curr_progress
-    from flight where flightID = ip_flightID;
-    
-    select routeID into routeId
-    from flight where flightID = ip_flightID;
-
-    -- select airplane_status, progress, routeID
---     into flight_status, curr_progress, routeId
---     from flight
---     where flightID = ip_flightID;
-
-    -- if airplane not on ground, exit the procedure
-    if airplane_status != 'on_ground' then
+    -- check null attributes
+    if flight_status is NULL or route_id is NULL or curr_progress is NULL then
 		leave sp_main;
 	end if;
 
+    -- if airplane not on ground, exit the procedure
+    if flight_status != 'on_ground' then
+		leave sp_main;
+	end if;
+    
     -- if flight has not ended
     select max(sequence) into total_route_legs
     from route_path
-    where routeID = routeId;
+    where routeID = route_id;
 
     if curr_progress != total_route_legs then
         leave sp_main;
     end if;
-
+    
     -- if there are passengers on the plane
     select count(*) into passengerCount
     from passenger p
@@ -839,13 +853,28 @@ begin
     if passengerCount > 0 then
         leave sp_main;
     end if;
+    
 
-    -- retrieve the airport location
+    -- retrieve the airport location that the plane has landed at    
+    select arrival into arrival_airport 
+    from leg where legID = (
+		select legID
+        from route_path
+        where routeID = route_id
+        and sequence = curr_progress
+    );
+        
+    if arrival_airport is NULL then
+		leave sp_main;
+	end if;
+    
     select locationID into airport_loc
-    from airport a
-    join leg l on a.airportID = l.arrival
-    join route_path rp on l.legID = rp.legID
-    where rp.routeID = routeId and rp.sequence = total_route_legs;
+    from airport
+    where airportID = arrival_airport;
+        
+    if airport_loc is NULL then
+		leave sp_main;
+	end if;
 
     -- recycle the crew and move them to the airport
     update person
