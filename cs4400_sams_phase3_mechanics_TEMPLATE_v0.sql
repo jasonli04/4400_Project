@@ -573,6 +573,7 @@ begin
     declare pilot_count INT;
     declare pilot_assigned_count INT;
     declare airplane_loc VARCHAR(50);
+    declare airplane_airport_loc VARCHAR(50);
     declare pilot_loc VARCHAR(50);
     declare airplane_type VARCHAR(100);
     declare license_count INT;
@@ -600,41 +601,45 @@ begin
         leave sp_main;
     end if;
 
-    select count(*) into pilot_count
-    from pilot
-    where personID = ip_personID;
-
-    if pilot_count != 1 then
-        leave sp_main;
-    end if;
-
-    select count(*) into pilot_assigned_count
-    from pilot
-    where personID = ip_personID and commanding_flight is not null;
-
-    if pilot_assigned_count > 0 then
-        leave sp_main;
-    end if;
-
-    select a.locationID, a.plane_type
-    into airplane_loc, airplane_type
+    select airplane_type, a.locationID
+    into airplane_type, airplane_loc
     from flight f
              join airplane a on f.support_airline = a.airlineID and f.support_tail = a.tail_num
     where f.flightID = ip_flightID;
 
-    select locationID into pilot_loc
+    select a.locationID into airplane_airport_loc
+    from airport a
+             join leg l on a.airportID = l.departure
+             join route_path rp on l.legID = rp.legID
+    where rp.routeID = q_route_id
+      and rp.sequence = curr_progress;
+
+    select locationID
+    into pilot_loc
     from person
     where personID = ip_personID;
 
-    if pilot_loc != airplane_loc then
+    select count(*)
+    into pilot_count
+    from pilot
+    where personID = ip_personID;
+
+    select count(*)
+    into pilot_assigned_count
+    from pilot
+    where commanding_flight = ip_flightID;
+
+    select count(*)
+    into license_count
+    from pilot_licenses
+    where personID = ip_personID
+      and license = airplane_type;
+
+    if pilot_count = 0 or pilot_assigned_count > 0 or license_count = 0 then
         leave sp_main;
     end if;
 
-    select count(*) into license_count
-    from pilot_licenses
-    where personID = ip_personID and license = airplane_type;
-
-    if license_count = 0 then
+    if pilot_loc != airplane_airport_loc then
         leave sp_main;
     end if;
 
@@ -643,13 +648,9 @@ begin
     where personID = ip_personID;
 
     update person
-    set locationID = (
-        select a.locationID
-        from flight f
-                 join airplane a on f.support_airline = a.airlineID and f.support_tail = a.tail_num
-        where f.flightID = ip_flightID
-    )
+    set locationID = airplane_loc
     where personID = ip_personID;
+
 end //
 delimiter ;
 
@@ -677,6 +678,7 @@ begin
     declare total_route_legs int;
     declare airplane_loc varchar(50);
     declare routeId varchar(50);
+    declare passengerCount int default 0;
 
     select airplane_status, progress, routeID
     into flight_status, curr_progress, routeId
@@ -695,6 +697,19 @@ begin
     if curr_progress < total_route_legs then
         leave sp_main;
     end if;
+
+    -- check the flight has no passengers
+    select a.locationID
+    into airplane_loc
+    from flight f
+             join airplane a on f.support_airline = a.airlineID and f.support_tail = a.tail_num
+    where f.flightID = ip_flightID;
+
+    select count(*)
+    into passengerCount
+    from passenger p
+             join person pe on p.personID = pe.personID
+    where pe.locationID = airplane_loc;
 
     select a.locationID
     into airplane_loc
@@ -830,6 +845,54 @@ begin
 
     -- Hint: use the previously created procedures
 
+    declare next_flight_id varchar(50);
+    declare flight_status varchar(100);
+    declare flight_next_time time;
+    declare flight_progress int;
+    declare total_route_legs int;
+    declare route_id varchar(50);
+
+    -- find the next flight to process, based on smallest next_time
+    select flightID, airplane_status, next_time, progress, routeID
+    into next_flight_id, flight_status, flight_next_time, flight_progress, route_id
+    from flight
+    order by next_time, (case when airplane_status = 'landing' then 0 else 1 end), flightID
+    limit 1;
+
+    -- if no flights to process, exit the procedure
+    if next_flight_id is null then
+        leave sp_main;
+    end if;
+
+    -- if the flight is in the air and about to land
+    if flight_status = 'in_flight' then
+        -- ensure the flight is landing at the next stop
+        call flight_landing(next_flight_id);
+
+        -- advance the time by 1 hour (as per the requirement)
+        update flight
+        set next_time = addtime(flight_next_time, '01:00:00')
+        where flightID = next_flight_id;
+
+        -- if the flight has reached the end of the route, recycle crew and retire flight
+        select max(sequence)
+        into total_route_legs
+        from route_path
+        where routeID = route_id;
+
+        if flight_progress = total_route_legs then
+            -- recycle the crew and retire the flight
+            call recycle_crew(next_flight_id);
+            call retire_flight(next_flight_id);
+        end if;
+    end if;
+
+    -- if the flight is on the ground and waiting to take off
+    if flight_status = 'on_ground' then
+        call passengers_board(next_flight_id);
+        call flight_takeoff(next_flight_id);
+    end if;
+
 end //
 delimiter ;
 
@@ -847,7 +910,13 @@ create or replace view flights_in_the_air
             (departing_from, arriving_at, num_flights,
              flight_list, earliest_arrival, latest_arrival, airplane_list)
 as
-select '_', '_', '_', '_', '_', '_', '_';
+select '_',
+       '_',
+       '_',
+       '_',
+       '_',
+       '_',
+       '_';
 
 -- [15] flights_on_the_ground()
 -- ------------------------------------------------------------------------------
@@ -862,7 +931,13 @@ create or replace view flights_on_the_ground
             (departing_from, num_flights,
              flight_list, earliest_arrival, latest_arrival, airplane_list)
 as
-select '_', '_', '_', '_', '_', '_';
+select
+    '_',
+    '_',
+    '_',
+    '_',
+    '_',
+    '_';
 
 -- [16] people_in_the_air()
 -- -----------------------------------------------------------------------------
