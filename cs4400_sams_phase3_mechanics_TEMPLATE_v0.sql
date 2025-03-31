@@ -1064,13 +1064,20 @@ create or replace view flights_in_the_air
             (departing_from, arriving_at, num_flights,
              flight_list, earliest_arrival, latest_arrival, airplane_list)
 as
-select '_',
-       '_',
-       '_',
-       '_',
-       '_',
-       '_',
-       '_';
+select 
+    l.departure as departing_from,
+    l.arrival as arriving_at,
+    count(f.flightID) as num_flights,
+    group_concat(f.flightID order by f.flightID) as flight_list,
+    min(f.next_time) as earliest_arrival,
+    max(f.next_time) as latest_arrival,
+    group_concat(a.locationID order by f.flightID) as airplane_list
+from flight f
+join route_path rp on f.routeID = rp.routeID and f.progress = rp.sequence
+join leg l on rp.legID = l.legID
+join airplane a on f.support_tail = a.tail_num
+where f.airplane_status = 'in_flight'
+group by l.departure, l.arrival;
 
 -- [15] flights_on_the_ground()
 -- ------------------------------------------------------------------------------
@@ -1085,13 +1092,33 @@ create or replace view flights_on_the_ground
             (departing_from, num_flights,
              flight_list, earliest_arrival, latest_arrival, airplane_list)
 as
-select
-    '_',
-    '_',
-    '_',
-    '_',
-    '_',
-    '_';
+select 
+    l.arrival as departing_from,
+    count(f.flightID) as num_flights,
+    group_concat(f.flightID order by f.flightID) as flight_list,
+    min(f.next_time) as earliest_arrival,
+    max(f.next_time) as latest_arrival,
+    group_concat(a.locationID order by f.flightID) as airplane_list
+from flight f
+join route_path rp on f.routeID = rp.routeID and f.progress = rp.sequence
+join leg l on rp.legID = l.legID
+join airplane a on f.support_tail = a.tail_num
+where f.airplane_status = 'on_ground'
+group by l.arrival
+union
+select 
+    l.departure as departing_from,
+    count(f.flightID) as num_flights,
+    group_concat(f.flightID order by f.flightID) as flight_list,
+    min(f.next_time) as earliest_arrival,
+    max(f.next_time) as latest_arrival,
+    group_concat(a.locationID order by f.flightID) as airplane_list
+from flight f
+join route_path rp on f.routeID = rp.routeID and f.progress + 1 = rp.sequence
+join leg l on rp.legID = l.legID
+join airplane a on f.support_tail = a.tail_num
+where f.airplane_status = 'on_ground'
+group by l.departure;
 
 -- [16] people_in_the_air()
 -- -----------------------------------------------------------------------------
@@ -1118,8 +1145,8 @@ select '_',
        '_',
        '_',
        '_',
-       '_';
-
+       '_'
+;
 -- [17] people_on_the_ground()
 -- -----------------------------------------------------------------------------
 /* This view describes where people who are currently on the ground and in an 
@@ -1167,4 +1194,13 @@ create or replace view alternative_airports
             (city, state, country, num_airports,
              airport_code_list, airport_name_list)
 as
-select '_', '_', '_', '_', '_', '_';
+select 
+    a.city,
+    a.state,
+    a.country,
+    count(*) as num_airports,
+    group_concat(a.airportID order by a.airportID) as airportID_list,
+    group_concat(a.airport_name order by a.airportID) as airport_name_list
+from airport a
+join airport a2 on a.city = a2.city and a.state = a2.state and a.airportID != a2.airportID
+group by a.city, a.state, a.country;
