@@ -1024,13 +1024,9 @@ begin
 
     -- if the flight is in the air and about to land
     if flight_status = 'in_flight' then
-        -- ensure the flight is landing at the next stop
+        -- attempt a landing at the next stop
         call flight_landing(next_flight_id);
-
-        -- advance the time by 1 hour (as per the requirement)
-        update flight
-        set next_time = addtime(flight_next_time, '01:00:00')
-        where flightID = next_flight_id;
+        call passengers_disembark(next_flight_id);
 
         -- if the flight has reached the end of the route, recycle crew and retire flight
         select max(sequence)
