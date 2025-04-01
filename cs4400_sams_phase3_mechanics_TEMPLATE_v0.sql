@@ -1135,18 +1135,28 @@ create or replace view people_in_the_air
              airplane_list, flight_list, earliest_arrival, latest_arrival, num_pilots,
              num_passengers, joint_pilots_passengers, person_list)
 as
-select '_',
-       '_',
-       '_',
-       '_',
-       '_',
-       '_',
-       '_',
-       '_',
-       '_',
-       '_',
-       '_'
-;
+select 
+    l.departure as departing_from,
+    l.arrival as arriving_at,
+    count(distinct f.flightID) as num_airplanes,
+    group_concat(distinct a.locationID order by a.locationID) as airplane_list,
+    group_concat(distinct f.flightID order by f.flightID) as flight_list,
+    min(f.next_time) as earliest_arrival,
+    max(f.next_time) as latest_arrival,
+    count(distinct pil.personID) as num_pilots,
+    count(distinct p.personID) - count(distinct pil.personID) as num_passengers,
+    count(distinct p.personID) as joint_pilots_passengers,
+    group_concat(distinct p.personID order by p.personID) as person_list
+from flight f
+join route_path rp on f.routeID = rp.routeID
+join leg l on rp.legID = l.legID
+join airplane a on f.support_tail = a.tail_num
+join person p on p.locationID = a.locationID
+left join pilot pil on pil.personID = p.personID
+where f.airplane_status = 'in_flight'
+  and f.progress = rp.sequence
+  group by l.departure, l.arrival;
+
 -- [17] people_on_the_ground()
 -- -----------------------------------------------------------------------------
 /* This view describes where people who are currently on the ground and in an 
@@ -1160,16 +1170,22 @@ create or replace view people_on_the_ground
             (departing_from, airport, airport_name,
              city, state, country, num_pilots, num_passengers, joint_pilots_passengers, person_list)
 as
-select '_',
-       '_',
-       '_',
-       '_',
-       '_',
-       '_',
-       '_',
-       '_',
-       '_',
-       '_';
+select 
+    a.airportID as departing_from,
+    a.locationID as airport,
+    a.airport_name as airport_name,
+    a.city,
+    a.state,
+    a.country,
+    count(distinct pilot.personID) as num_pilots,
+    count(distinct passenger.personID) as num_passengers,
+    count(distinct p.personID) as joint_pilots_passengers,
+    group_concat(distinct p.personID order by p.personID) as person_list
+from person p
+join airport a on p.locationID = a.locationID
+left join pilot on p.personID = pilot.personID
+left join passenger on p.personID = passenger.personID
+group by a.airportID, a.locationID, a.airport_name, a.city, a.state, a.country;
 
 -- [18] route_summary()
 -- -----------------------------------------------------------------------------
@@ -1182,7 +1198,23 @@ create or replace view route_summary
             (route, num_legs, leg_sequence, route_length,
              num_flights, flight_list, airport_sequence)
 as
-select '_', '_', '_', '_', '_', '_', '_';
+select
+	rp.routeID as route,
+    (select count(distinct rp2.legID) 
+     from route_path rp2 
+     where rp2.routeID = rp.routeID) as num_legs,
+    group_concat(distinct l.legID order by rp.sequence) as leg_sequence,
+    (select sum(l2.distance) 
+     from route_path rp2 
+     join leg l2 on rp2.legID = l2.legID 
+     where rp2.routeID = rp.routeID) as route_length,
+    count(distinct f.flightID) as num_flights,
+    group_concat(distinct f.flightID order by f.flightID) as flight_list,
+    group_concat(distinct concat(l.departure, '->', l.arrival) order by rp.sequence) as airport_sequence
+from route_path rp
+join leg l on l.legID = rp.legID
+left join flight f on f.routeID = rp.routeID
+group by rp.routeID;
 
 -- [19] alternative_airports()
 -- -----------------------------------------------------------------------------
