@@ -63,6 +63,26 @@ begin
 
     DECLARE duplicate_airplane INT DEFAULT 0;
     DECLARE duplicate_location INT DEFAULT 0;
+    
+    -- input validity checking
+    -- airline must have airlineID and tail number
+    IF ip_airlineID is NULL or length(ip_airlineID) = 0 THEN
+		LEAVE sp_main;
+	END IF;
+    
+    IF ip_tail_num is NULL or length(ip_tail_num) = 0 THEN
+		LEAVE sp_main;
+	END IF;
+    
+    -- seat capacity and speed checks
+    if ip_seat_capacity is null or ip_seat_capacity < 0 then
+		LEAVE sp_main;
+	END IF;
+    
+    if ip_speed is null or ip_speed < 0 then
+		LEAVE sp_main;
+	END IF;
+    
 
     -- Check model types
     IF ip_plane_type NOT IN ('Boeing', 'Airbus') AND ip_plane_type IS NOT NULL THEN
@@ -129,7 +149,11 @@ begin
     -- Ensure that the airport and location values are new and unique
     -- Add airport and location into respective tables
     DECLARE cnt INT DEFAULT 0;
-
+    
+    if ip_airportID is null or length(ip_airportID) = 0  or ip_airport_name is null or length(ip_airport_name) = 0 or 
+		ip_city is null or length(ip_city) = 0 or ip_state is null or length(ip_state) = 0 or ip_country is null or length(ip_country) = 0 then
+		leave sp_main;
+	end if;
 
     SELECT COUNT(*)
     INTO cnt
@@ -187,6 +211,32 @@ begin
     -- Ensure that the persion ID is unique
     -- Ensure that the person is a pilot or passenger
     -- Add them to the person table as well as the table of their respective role
+    
+    -- input validity checks
+    -- personID must not be null, and must be in the format p#
+    if ip_personID is NULL or length(ip_personID) = 0 or ip_personID not like 'p%' THEN
+        LEAVE sp_main;
+    END IF;
+    
+    -- checking if first name is valid
+    if ip_first_name is NULL or length(ip_first_name) = 0 THEN
+        LEAVE sp_main;
+    END IF;
+    
+    -- checking if location is valid
+    if ip_locationID is NULL or length(ip_locationID) = 0 THEN
+		LEAVE sp_main;
+	END IF;
+    
+    -- making sure a person is not both a pilot and a passenger
+    if (ip_taxID is not null and length(ip_taxID) != 0) and (ip_experience is not null and ip_experience >= 0)
+		and (ip_miles is not null or ip_funds is not null) then
+		LEAVE sp_main;
+	END IF;
+    
+    if (ip_miles is not null and ip_miles >= 0) and (ip_funds is not null and ip_funds >= 0) and (ip_taxID is not null or ip_experience is not null) then
+		LEAVE sp_main;
+	END IF;
 
     IF ip_locationID NOT IN (select locationID from location) THEN
         LEAVE sp_main;
@@ -228,12 +278,22 @@ begin
     -- If license exists, delete it, otherwise add the license
     DECLARE pilotCount INT DEFAULT 0;
     DECLARE licenseCount INT DEFAULT 0;
-
+    
+    -- input validity checks
+    -- making sure person is valid
+    if ip_personID is NULL or length(ip_personID) = 0 THEN
+		LEAVE sp_main;
+    END IF;
+    
+    -- making sure license type is valid 
+    if ip_license is null or length(ip_license) = 0 then
+        LEAVE sp_main;
+    END IF;
+    
     SELECT COUNT(*) INTO pilotCount FROM pilot WHERE personID = ip_personID;
     IF pilotCount = 0 THEN
         LEAVE sp_main;
     END IF;
-
 
     SELECT COUNT(*)
     INTO licenseCount
@@ -260,7 +320,7 @@ delimiter ;
 an airplane has been assigned for support, but it must have a valid route.  And
 the airplane, if designated, must not be in use by another flight.  The flight
 can be started at any valid location along the route except for the final stop,
-and it will begin on the ground.  You must also include when the flight will
+and it will begin on the ground. You must also include when the flight will
 takeoff along with its cost. */
 -- -----------------------------------------------------------------------------
 drop procedure if exists offer_flight;
@@ -275,7 +335,34 @@ begin
     -- Ensure that the route exists
     -- Ensure that the progress is less than the length of the route
     -- Create the flight with the airplane starting in on the ground
-
+    
+    -- input validity checks 
+    -- making sure flightID is valid
+    if ip_flightID is null or length(ip_flightID) = 0 THEN
+		LEAVE sp_main;
+    END IF;
+    
+    -- making sure the plane FK is valid
+    if ip_support_airline is null or length(ip_support_airline) = 0 or ip_support_tail is null or length(ip_support_tail) = 0 THEN
+		LEAVE sp_main;
+    END IF;
+    
+    -- making sure routeID is valid
+    if ip_routeID is null or length(ip_routeID) = 0 THEN
+		LEAVE sp_main;
+    END IF;
+    
+    -- making sure cost is non-negative
+    if ip_cost < 0 then
+		LEAVE sp_main;
+    END IF;
+    
+    -- making sure takeoff time is valid
+    if ip_next_time is null then
+		LEAVE sp_main;
+    END IF;
+    
+    
     IF (ip_support_airline, ip_support_tail) not in (select airlineID, tail_num from airplane) THEN
         LEAVE sp_main;
     END IF;
@@ -284,7 +371,7 @@ begin
         LEAVE sp_main;
     END IF;
 
-    IF ip_progress >= (select max(sequence) from route_path group by routeID having routeID = ip_routeID) THEN
+    IF ip_progress >= (select max(sequence) from route_path group by routeID having routeID = ip_routeID) or ip_progress < 0 THEN
         LEAVE sp_main;
     END IF;
 
@@ -321,6 +408,12 @@ begin
     declare curr_status VARCHAR(100);
     declare curr_next_time TIME;
     declare flight_miles INT;
+    
+    -- validity checks
+    -- makes sure flight is valid
+	if ip_flightID is null or length(ip_flightID) = 0 then
+		LEAVE sp_main;
+    END IF;    
 
     select airplane_status, next_time
     into
@@ -396,6 +489,12 @@ begin
     DECLARE ip_support_tail varchar(64);
     DECLARE ip_speed INT DEFAULT 0;
     DECLARE ip_distance INT DEFAULT 0;
+    
+	-- validity checks
+    -- makes sure flight is valid
+	if ip_flightID is null or length(ip_flightID) = 0 then
+		LEAVE sp_main;
+    END IF; 
 
 
     IF ip_flightID not in (select flightID from flight) THEN
@@ -497,6 +596,12 @@ begin
     declare curr_airport CHAR(3);
     declare airport_loc VARCHAR(50);
     declare route_id VARCHAR(50);
+    
+	-- validity checks
+    -- makes sure flight is valid
+	if ip_flightID is null or length(ip_flightID) = 0 then
+		LEAVE sp_main;
+    END IF; 
 
     -- verify flight exists and can be boarded
     select count(*) into flight_count from flight where flightID = ip_flightID;
@@ -617,6 +722,12 @@ begin
     DECLARE current_airport CHAR(3);
     DECLARE current_location VARCHAR(50);
     DECLARE plane_location VARCHAR(50);
+    
+	-- validity checks
+    -- makes sure flight is valid
+	if ip_flightID is null or length(ip_flightID) = 0 then
+		LEAVE sp_main;
+    END IF; 
 
     IF ip_flightID not in (select flightID from flight) THEN
         LEAVE sp_main;
@@ -713,6 +824,21 @@ begin
     declare pilot_loc VARCHAR(50);
     declare airplane_type VARCHAR(100);
     declare license_count INT;
+    
+	-- validity checks
+    -- makes sure flight is valid
+	if ip_flightID is null or length(ip_flightID) = 0 then
+		LEAVE sp_main;
+    END IF; 
+    
+    -- make sure person/pilot is valid
+    if ip_personID is null or length(ip_personID) = 0 or ip_personID not like 'p%' then
+		LEAVE sp_main;
+    END IF;
+    
+    if ip_personID not in (select personID from pilot) then
+		LEAVE sp_main;
+    END IF;
 
     -- verify flight exists
     select count(*) into flight_count from flight where flightID = ip_flightID;
@@ -836,6 +962,12 @@ begin
     declare passengerCount int default 0;
     declare arrival_airport varchar(3);
     declare airport_loc varchar(50);
+    
+	-- validity checks
+    -- makes sure flight is valid
+	if ip_flightID is null or length(ip_flightID) = 0 then
+		LEAVE sp_main;
+    END IF; 
 
     select airplane_status, progress, routeID
     into flight_status, curr_progress, route_id
@@ -937,6 +1069,12 @@ begin
     declare pilotCount int default 0;
     declare passengerCount int default 0;
     declare routeId varchar(50);
+    
+	-- validity checks
+    -- makes sure flight is valid
+	if ip_flightID is null or length(ip_flightID) = 0 then
+		LEAVE sp_main;
+    END IF; 
 
     select airplane_status, progress, routeID
     into flight_status, curr_progress, routeId
