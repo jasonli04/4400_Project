@@ -877,7 +877,7 @@ begin
     into pilot_license_count
     from pilot_licenses
     where personID = ip_personID
-      and license = airplane_type;
+      and (license = airplane_type) or (airplane_type is NULL and license = 'general');
 
     if pilot_license_count < 1 then
         leave sp_main;
