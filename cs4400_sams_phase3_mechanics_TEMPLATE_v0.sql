@@ -82,12 +82,6 @@ begin
     if ip_speed is null or ip_speed < 0 then
 		LEAVE sp_main;
 	END IF;
-    
-
-    -- Check model types
-    IF ip_plane_type NOT IN ('Boeing', 'Airbus') AND ip_plane_type IS NOT NULL THEN
-        LEAVE sp_main;
-    END IF;
 
     -- Check boeing invalid attributes
     IF ip_plane_type = 'Boeing' AND (ip_model IS NULL OR ip_model = '' OR ip_maintenanced IS NULL) THEN
@@ -214,7 +208,7 @@ begin
     
     -- input validity checks
     -- personID must not be null, and must be in the format p#
-    if ip_personID is NULL or length(ip_personID) = 0 or ip_personID not like 'p%' THEN
+    if ip_personID is NULL or length(ip_personID) = 0 THEN
         LEAVE sp_main;
     END IF;
     
@@ -832,7 +826,7 @@ begin
     END IF; 
     
     -- make sure person/pilot is valid
-    if ip_personID is null or length(ip_personID) = 0 or ip_personID not like 'p%' then
+    if ip_personID is null or length(ip_personID) = 0 then
 		LEAVE sp_main;
     END IF;
     
@@ -1177,8 +1171,18 @@ begin
     select flightID, airplane_status, next_time, progress, routeID
     into next_flight_id, flight_status, flight_next_time, flight_progress, route_id
     from flight
-    order by next_time, (case when airplane_status = 'landing' then 0 else 1 end), flightID
+    where airplane_status = 'landing'
+    order by next_time, flightID
     limit 1;
+
+    if next_flight_id is null then
+        select flightID, airplane_status, next_time, progress, routeID
+        into next_flight_id, flight_status, flight_next_time, flight_progress, route_id
+        from flight
+        order by next_time, flightID
+        limit 1;
+    end if;
+
 
     -- if no flights to process, exit the procedure
     if next_flight_id is null then
