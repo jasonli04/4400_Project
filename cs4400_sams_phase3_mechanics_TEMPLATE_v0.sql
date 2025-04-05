@@ -512,10 +512,15 @@ begin
 
     select count(*) into numPilots from pilot where commanding_flight = ip_flightID;
 
-    IF ((select plane_type
-         from airplane
-         where ip_support_airline = airlineID
-           and ip_support_tail = tail_num) like 'Airbus' and numPilots < 1)
+    IF (((select plane_type
+          from airplane
+          where ip_support_airline = airlineID
+            and ip_support_tail = tail_num) like 'Airbus' or
+         (select plane_type
+          from airplane
+          where ip_support_airline = airlineID
+            and ip_support_tail = tail_num) is null)
+        and numPilots < 1)
         OR
        ((select plane_type
          from airplane
